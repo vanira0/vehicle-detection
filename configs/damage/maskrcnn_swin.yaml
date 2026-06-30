@@ -1,0 +1,36 @@
+# =============================================================================
+# Damage Localization — Mask R-CNN with Swin Transformer backbone
+# =============================================================================
+# Stage 2 alternative: Swaps ResNet50 for a Swin-T backbone for
+# potentially better feature extraction on fine-grained damage patterns.
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: damage_maskrcnn_swin_v1
+
+model:
+  name: maskrcnn_swin
+  stage: damage
+  num_classes: 7
+  backbone: swin_t
+  pretrained: true
+  fpn: true
+  trainable_backbone_layers: 3
+  min_size: 800
+  max_size: 1333
+
+data:
+  annotation_format: coco
+  image_size: 1024
+
+training:
+  epochs: 40
+  batch_size: 2
+  optimizer:
+    name: adamw
+    lr: 0.0001
+    weight_decay: 0.01
+  scheduler:
+    name: cosine
+    T_max: 40
+    eta_min: 0.000001

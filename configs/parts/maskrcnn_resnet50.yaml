@@ -1,0 +1,37 @@
+# =============================================================================
+# Car Part Mapping — Mask R-CNN with ResNet50-FPN backbone
+# =============================================================================
+# Stage 3: Instance segmentation of car parts (hood, bumper, fender, etc.)
+# Same architecture as damage model but trained on part annotations.
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: parts_maskrcnn_resnet50_v1
+
+model:
+  name: maskrcnn_resnet50
+  stage: parts
+  num_classes: 16                  # bg + 15 part classes
+  backbone: resnet50
+  pretrained: true
+  fpn: true
+  trainable_backbone_layers: 3
+  min_size: 800
+  max_size: 1333
+
+data:
+  annotation_format: coco
+  image_size: 1024
+
+training:
+  epochs: 50
+  batch_size: 2
+  optimizer:
+    name: sgd
+    lr: 0.005
+    momentum: 0.9
+    weight_decay: 0.0005
+  scheduler:
+    name: step
+    step_size: 10
+    gamma: 0.1

@@ -1,0 +1,33 @@
+# =============================================================================
+# Damage Localization — YOLOv8 Instance Segmentation
+# =============================================================================
+# Stage 2 alternative: Ultralytics YOLOv8 segmentation for faster
+# training and inference. Requires `pip install ultralytics`.
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: damage_yolov8_seg_v1
+
+model:
+  name: yolov8_seg
+  stage: damage
+  num_classes: 6                   # scratch + dent + crack + broken + shatter + tear (no bg class needed)
+  variant: yolov8m-seg             # yolov8n-seg | yolov8s-seg | yolov8m-seg | yolov8l-seg | yolov8x-seg
+  pretrained: true
+
+data:
+  annotation_format: coco
+  image_size: 640                  # YOLOv8 default
+
+training:
+  epochs: 100
+  batch_size: 8
+  optimizer:
+    name: adamw
+    lr: 0.001
+    weight_decay: 0.0005
+  scheduler:
+    name: cosine
+    T_max: 100
+    eta_min: 0.00001
+  amp: true

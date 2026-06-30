@@ -1,0 +1,39 @@
+# =============================================================================
+# Gatekeeper — ResNet50 Binary Classifier
+# =============================================================================
+# Stage 1: Determines if an image contains a damaged vehicle.
+# Binary classification: damaged vs. undamaged/not-a-car.
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: gatekeeper_resnet50_v1
+
+model:
+  name: resnet50_classifier
+  stage: gatekeeper
+  num_classes: 2                   # undamaged, damaged
+  backbone: resnet50
+  pretrained: true
+  dropout: 0.5
+  freeze_backbone_epochs: 5        # Freeze backbone for first N epochs
+
+data:
+  annotation_format: folder         # Folder-based: damaged/ vs undamaged/
+  image_size: 224
+
+training:
+  epochs: 30
+  batch_size: 32
+  optimizer:
+    name: adam
+    lr: 0.001
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    T_max: 30
+    eta_min: 0.00001
+  early_stopping:
+    metric: accuracy
+    patience: 7
+  checkpoint:
+    metric: accuracy
