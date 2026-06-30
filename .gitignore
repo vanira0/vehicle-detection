@@ -1,5 +1,5 @@
 # Data & experiment outputs
-data/
+# data/
 runs/
 *.pth
 *.onnx
