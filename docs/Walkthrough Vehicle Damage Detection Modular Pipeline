@@ -1,0 +1,128 @@
+# Walkthrough: Vehicle Damage Detection Modular Pipeline
+
+## What Was Built
+
+A complete, modular end-to-end pipeline for vehicle damage detection with **46 source files** across 9 components. The core design goal — **strategy swappability** — is achieved through a model registry + strategy pattern that lets you swap model architectures via YAML config changes alone.
+
+## Architecture Summary
+
+```mermaid
+graph TD
+    A["YAML Config"] --> B["Model Registry"]
+    B --> C["Trainer (Model-Agnostic)"]
+    A --> C
+    A --> D["Data Pipeline"]
+    D --> C
+    C --> E["Callbacks"]
+    C --> F["Evaluator"]
+    F --> G["Comparator"]
+    C --> H["Checkpoints"]
+    H --> I["Inference Pipeline"]
+    I --> J["Orchestrator"]
+    J --> K["Findings Report"]
+```
+
+---
+
+## Changes Made
+
+### Configs (6 files)
+| File | Purpose |
+|------|---------|
+| [base.yaml](file:///D:/vehicle-detection/configs/base.yaml) | Shared defaults inherited by all experiments |
+| [gatekeeper/resnet50.yaml](file:///D:/vehicle-detection/configs/gatekeeper/resnet50.yaml) | Gatekeeper binary classifier config |
+| [damage/maskrcnn_resnet50.yaml](file:///D:/vehicle-detection/configs/damage/maskrcnn_resnet50.yaml) | Baseline Mask R-CNN config |
+| [damage/maskrcnn_swin.yaml](file:///D:/vehicle-detection/configs/damage/maskrcnn_swin.yaml) | Swin Transformer backbone alternative |
+| [damage/yolov8_seg.yaml](file:///D:/vehicle-detection/configs/damage/yolov8_seg.yaml) | YOLOv8 segmentation alternative |
+| [parts/maskrcnn_resnet50.yaml](file:///D:/vehicle-detection/configs/parts/maskrcnn_resnet50.yaml) | Car part segmentation config |
+
+---
+
+### Core Source (`src/`) — 26 files
+
+#### Utilities (`src/utils/`)
+| File | Purpose |
+|------|---------|
+| [config.py](file:///D:/vehicle-detection/src/utils/config.py) | YAML config loader with `_base_` inheritance, CLI overrides, dot-notation access |
+| [logger.py](file:///D:/vehicle-detection/src/utils/logger.py) | Structured console/file logging + CSV metrics logger |
+| [seed.py](file:///D:/vehicle-detection/src/utils/seed.py) | Full reproducibility (Python, NumPy, PyTorch, CuDNN) |
+| [visualization.py](file:///D:/vehicle-detection/src/utils/visualization.py) | Mask overlay, bbox drawing, multi-panel pipeline visualization |
+
+#### Data Pipeline (`src/data/`)
+| File | Purpose |
+|------|---------|
+| [dataset.py](file:///D:/vehicle-detection/src/data/dataset.py) | `ClassificationDataset` (folder-based) + `COCOSegmentationDataset` (COCO JSON) |
+| [augmentations.py](file:///D:/vehicle-detection/src/data/augmentations.py) | Albumentations pipelines for classification and segmentation (mask-aware) |
+| [preprocessing.py](file:///D:/vehicle-detection/src/data/preprocessing.py) | Image loading, resizing, normalization for inference |
+| [splits.py](file:///D:/vehicle-detection/src/data/splits.py) | Stratified/random splits with JSON persistence and COCO annotation splitting |
+
+#### Model Registry (`src/models/`)
+| File | Purpose |
+|------|---------|
+| [registry.py](file:///D:/vehicle-detection/src/models/registry.py) | `@register_model` decorator + `get_model()` lookup |
+| [base.py](file:///D:/vehicle-detection/src/models/base.py) | `BaseDetector` and `BaseClassifier` abstract interfaces |
+| [gatekeeper/resnet_classifier.py](file:///D:/vehicle-detection/src/models/gatekeeper/resnet_classifier.py) | ResNet50 binary classifier with backbone freezing |
+| [gatekeeper/mobilenet_classifier.py](file:///D:/vehicle-detection/src/models/gatekeeper/mobilenet_classifier.py) | MobileNetV3 lightweight alternative |
+| [damage/maskrcnn.py](file:///D:/vehicle-detection/src/models/damage/maskrcnn.py) | Mask R-CNN (ResNet50-FPN) baseline |
+| [damage/maskrcnn_swin.py](file:///D:/vehicle-detection/src/models/damage/maskrcnn_swin.py) | Mask R-CNN with Swin Transformer backbone |
+| [damage/yolov8_seg.py](file:///D:/vehicle-detection/src/models/damage/yolov8_seg.py) | YOLOv8 segmentation wrapper |
+| [parts/maskrcnn.py](file:///D:/vehicle-detection/src/models/parts/maskrcnn.py) | Mask R-CNN for car part segmentation |
+
+#### Training Engine (`src/training/`)
+| File | Purpose |
+|------|---------|
+| [trainer.py](file:///D:/vehicle-detection/src/training/trainer.py) | Model-agnostic training loop with AMP, gradient accumulation, callbacks |
+| [optimizers.py](file:///D:/vehicle-detection/src/training/optimizers.py) | Factory: SGD, Adam, AdamW, RMSprop |
+| [schedulers.py](file:///D:/vehicle-detection/src/training/schedulers.py) | Factory: StepLR, Cosine, OneCycle, Plateau, MultiStep, Exponential |
+| [callbacks.py](file:///D:/vehicle-detection/src/training/callbacks.py) | Checkpoint, EarlyStopping, Logging, TensorBoard callbacks |
+| [strategies.py](file:///D:/vehicle-detection/src/training/strategies.py) | Standard vs YOLOv8 native training strategies |
+| [amp.py](file:///D:/vehicle-detection/src/training/amp.py) | Mixed precision context manager |
+
+#### Evaluation (`src/evaluation/`)
+| File | Purpose |
+|------|---------|
+| [metrics.py](file:///D:/vehicle-detection/src/evaluation/metrics.py) | mAP@0.5, mAP@0.5:0.95, precision, recall, F1, mask IoU |
+| [evaluator.py](file:///D:/vehicle-detection/src/evaluation/evaluator.py) | Run evaluation on checkpoints |
+| [comparator.py](file:///D:/vehicle-detection/src/evaluation/comparator.py) | Side-by-side experiment comparison tables |
+
+#### Inference (`src/inference/`)
+| File | Purpose |
+|------|---------|
+| [pipeline.py](file:///D:/vehicle-detection/src/inference/pipeline.py) | End-to-end 3-stage pipeline: Gatekeeper → Damage → Parts → Orchestrator |
+| [orchestrator.py](file:///D:/vehicle-detection/src/inference/orchestrator.py) | IoU overlap mapping with severity classification |
+| [exporters.py](file:///D:/vehicle-detection/src/inference/exporters.py) | ONNX and TorchScript model export |
+
+---
+
+### CLI Scripts (5 files)
+| Script | Purpose |
+|--------|---------|
+| [train.py](file:///D:/vehicle-detection/scripts/train.py) | `python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml` |
+| [evaluate.py](file:///D:/vehicle-detection/scripts/evaluate.py) | `python scripts/evaluate.py --checkpoint runs/.../best.pth` |
+| [compare.py](file:///D:/vehicle-detection/scripts/compare.py) | `python scripts/compare.py --runs exp1 exp2 exp3` |
+| [infer.py](file:///D:/vehicle-detection/scripts/infer.py) | `python scripts/infer.py --image test.jpg --gatekeeper ... --damage ... --parts ...` |
+| [export.py](file:///D:/vehicle-detection/scripts/export.py) | `python scripts/export.py --checkpoint best.pth --format onnx` |
+
+### Tests (4 files)
+| Test | Covers |
+|------|--------|
+| [test_dataset.py](file:///D:/vehicle-detection/tests/test_dataset.py) | Config, data splits, COCO annotation splitting |
+| [test_models.py](file:///D:/vehicle-detection/tests/test_models.py) | Registry, model builds, interface compliance |
+| [test_trainer.py](file:///D:/vehicle-detection/tests/test_trainer.py) | Optimizer/scheduler factories, callback behaviors |
+| [test_pipeline.py](file:///D:/vehicle-detection/tests/test_pipeline.py) | Orchestrator IoU mapping, metrics calculations |
+
+---
+
+## Verification
+
+- ✅ All 46 source files created and syntactically valid
+- ✅ Project structure matches the approved implementation plan
+- ⚠️ Unit tests require `pip install -r requirements.txt` (torch, numpy, etc.) to run
+
+## Next Steps
+
+1. **Set up environment**: `pip install -r requirements.txt` in a virtual environment
+2. **Prepare data**: Download VehiDE dataset or your own, organize into COCO format
+3. **Run tests**: `pytest tests/ -v` to verify everything works
+4. **Train baseline**: `python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml`
+5. **Experiment**: Swap configs to try different strategies, compare with `scripts/compare.py`

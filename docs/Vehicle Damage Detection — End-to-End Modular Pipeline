@@ -1,0 +1,633 @@
+# Vehicle Damage Detection — End-to-End Modular Pipeline
+
+## Goal
+
+Build a production-ready, modular vehicle damage detection pipeline based on the [existing plan](file:///D:/vehicle-detection/docs/Vehicle_Damage_Detection_Implementation_Plan.md). The key design goal is **strategy-swappability**: each stage of the pipeline (gatekeeper, damage segmentation, part segmentation) uses a pluggable training strategy so you can experiment with different architectures, hyperparameters, and training techniques — then compare results side-by-side — without rewriting pipeline code.
+
+---
+
+## Review of Existing Plan
+
+The original document specifies a solid 3-stage architecture:
+
+| Stage | Role | Default Model |
+|-------|------|---------------|
+| **Gatekeeper** | Binary classification (car present + damaged?) | ResNet50 / MobileNet |
+| **Damage Localization** | Instance segmentation of damage types | Mask R-CNN (ResNet50-FPN) |
+| **Car Part Mapping** | Instance segmentation of car parts | Mask R-CNN / YOLACT |
+| **Orchestrator** | IoU overlap to map damage → part | Python logic |
+
+**Strengths:** Clear separation of concerns, pixel-level masks for cost estimation, modular retraining.
+
+**Gaps this plan addresses:**
+- No experiment tracking or strategy abstraction — hard to compare different approaches
+- No configuration management — hyperparameters are hardcoded
+- No data versioning or validation pipeline
+- No evaluation harness for systematic comparison
+- No reproducibility infrastructure (seeds, logging, checkpointing)
+- Training code is monolithic — changing the model requires rewriting the training loop
+
+---
+
+## Proposed Changes
+
+### Project Structure
+
+The entire codebase lives under `D:\vehicle-detection\` with this layout:
+
+```
+vehicle-detection/
+├── configs/                          # YAML experiment configs
+│   ├── base.yaml                     # Shared defaults
+│   ├── gatekeeper/
+│   │   ├── resnet50.yaml
+│   │   └── mobilenetv3.yaml
+│   ├── damage/
+│   │   ├── maskrcnn_resnet50.yaml
+│   │   ├── maskrcnn_swin.yaml
+│   │   └── yolov8_seg.yaml
+│   └── parts/
+│       ├── maskrcnn_resnet50.yaml
+│       └── yolact.yaml
+│
+├── src/                              # Core source code
+│   ├── __init__.py
+│   ├── data/                         # Data loading & augmentation
+│   │   ├── __init__.py
+│   │   ├── dataset.py                # COCO dataset + classification dataset
+│   │   ├── augmentations.py          # Albumentations pipelines
+│   │   ├── preprocessing.py          # Resize, normalize, format conversion
+│   │   └── splits.py                 # Train/val/test split logic
+│   │
+│   ├── models/                       # Model definitions (strategy pattern)
+│   │   ├── __init__.py
+│   │   ├── registry.py               # Model registry (register/lookup by name)
+│   │   ├── base.py                   # Abstract base classes
+│   │   ├── gatekeeper/
+│   │   │   ├── __init__.py
+│   │   │   ├── resnet_classifier.py
+│   │   │   └── mobilenet_classifier.py
+│   │   ├── damage/
+│   │   │   ├── __init__.py
+│   │   │   ├── maskrcnn.py
+│   │   │   ├── maskrcnn_swin.py      # Swin Transformer backbone swap
+│   │   │   └── yolov8_seg.py         # Ultralytics YOLOv8 segmentation
+│   │   └── parts/
+│   │       ├── __init__.py
+│   │       ├── maskrcnn.py
+│   │       └── yolact.py
+│   │
+│   ├── training/                     # Training engine (strategy-agnostic)
+│   │   ├── __init__.py
+│   │   ├── trainer.py                # Core training loop
+│   │   ├── strategies.py             # Training strategy abstractions
+│   │   ├── optimizers.py             # Optimizer factory
+│   │   ├── schedulers.py             # LR scheduler factory
+│   │   ├── callbacks.py              # Checkpoint, early stopping, logging
+│   │   └── amp.py                    # Mixed precision wrapper
+│   │
+│   ├── evaluation/                   # Evaluation & comparison
+│   │   ├── __init__.py
+│   │   ├── metrics.py                # mAP, precision, recall, mask IoU
+│   │   ├── evaluator.py              # Run evaluation on a checkpoint
+│   │   └── comparator.py             # Compare multiple experiment runs
+│   │
+│   ├── inference/                    # Inference pipeline
+│   │   ├── __init__.py
+│   │   ├── pipeline.py               # End-to-end 3-stage pipeline
+│   │   ├── orchestrator.py           # IoU overlap + report generation
+│   │   └── exporters.py              # ONNX / TorchScript export
+│   │
+│   └── utils/                        # Shared utilities
+│       ├── __init__.py
+│       ├── config.py                 # YAML config loader + merge
+│       ├── logger.py                 # Structured logging
+│       ├── seed.py                   # Reproducibility (seeds)
+│       └── visualization.py          # Mask overlay, bbox drawing
+│
+├── scripts/                          # CLI entry points
+│   ├── train.py                      # python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml
+│   ├── evaluate.py                   # python scripts/evaluate.py --checkpoint runs/exp_01/best.pth
+│   ├── compare.py                    # python scripts/compare.py --runs exp_01 exp_02
+│   ├── infer.py                      # python scripts/infer.py --image test.jpg
+│   └── export.py                     # python scripts/export.py --checkpoint best.pth --format onnx
+│
+├── runs/                             # Experiment outputs (gitignored)
+│   └── {experiment_name}/
+│       ├── config.yaml               # Frozen config snapshot
+│       ├── checkpoints/
+│       ├── logs/
+│       └── metrics/
+│
+├── data/                             # Dataset root (gitignored)
+│   ├── raw/                          # Original downloaded images
+│   ├── processed/                    # Resized + split
+│   ├── annotations/                  # COCO JSON files
+│   └── undamaged/                    # Negative mining images
+│
+├── tests/                            # Unit + integration tests
+│   ├── test_dataset.py
+│   ├── test_models.py
+│   ├── test_trainer.py
+│   └── test_pipeline.py
+│
+├── docs/                             # Existing docs
+├── requirements.txt
+├── setup.py
+└── README.md
+```
+
+---
+
+### Component 1: Configuration System
+
+#### [NEW] [base.yaml](file:///D:/vehicle-detection/configs/base.yaml)
+
+YAML-driven experiment configs that inherit from a base. Every hyperparameter, model choice, and data path is configured here — **never hardcoded**.
+
+```yaml
+# configs/base.yaml
+project_name: vehicle-damage-detection
+seed: 42
+
+data:
+  root: data/processed
+  annotation_format: coco
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  num_workers: 4
+  pin_memory: true
+
+augmentation:
+  horizontal_flip: 0.5
+  vertical_flip: 0.0
+  rotation_limit: 15
+  color_jitter:
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+training:
+  epochs: 50
+  batch_size: 4
+  optimizer:
+    name: sgd              # Swappable: sgd | adam | adamw
+    lr: 0.005
+    momentum: 0.9
+    weight_decay: 0.0005
+  scheduler:
+    name: step             # Swappable: step | cosine | onecycle | plateau
+    step_size: 3
+    gamma: 0.1
+  amp: true                # Automatic mixed precision
+  gradient_accumulation: 1
+  early_stopping:
+    patience: 10
+    metric: mAP_50_95
+  checkpoint:
+    save_every: 5
+    save_best: true
+    metric: mAP_50_95
+
+evaluation:
+  iou_thresholds: [0.5, 0.75]
+  confidence_threshold: 0.5
+  nms_threshold: 0.5
+```
+
+An experiment config then overrides specific fields:
+
+```yaml
+# configs/damage/maskrcnn_swin.yaml
+_base_: ../base.yaml
+experiment_name: damage_maskrcnn_swin_v1
+
+model:
+  name: maskrcnn_swin           # Looked up in model registry
+  stage: damage
+  num_classes: 7                # bg + scratch + dent + crack + broken + shatter + tear
+  backbone: swin_t
+  pretrained: true
+  fpn: true
+
+training:
+  epochs: 40
+  batch_size: 2
+  optimizer:
+    name: adamw
+    lr: 0.0001
+    weight_decay: 0.01
+  scheduler:
+    name: cosine
+    T_max: 40
+    eta_min: 0.000001
+```
+
+#### [NEW] [config.py](file:///D:/vehicle-detection/src/utils/config.py)
+
+Loads YAML configs with `_base_` inheritance and CLI override support via `--set key=value`.
+
+---
+
+### Component 2: Model Registry & Strategy Pattern
+
+This is the core modularity mechanism. Every model is a class that inherits from a base and registers itself. The training loop doesn't know which model it's training — it just calls the interface.
+
+#### [NEW] [base.py](file:///D:/vehicle-detection/src/models/base.py)
+
+```python
+from abc import ABC, abstractmethod
+
+class BaseDetector(ABC):
+    """Abstract base for all detection/segmentation models."""
+
+    @abstractmethod
+    def build(self, config: dict) -> torch.nn.Module:
+        """Construct and return the model."""
+        ...
+
+    @abstractmethod
+    def get_transform(self, is_train: bool):
+        """Return data transforms specific to this model."""
+        ...
+
+    @abstractmethod
+    def compute_loss(self, model, images, targets) -> dict:
+        """Forward pass + loss computation. Returns loss dict."""
+        ...
+
+    @abstractmethod
+    def post_process(self, predictions, confidence_threshold: float) -> list:
+        """Post-process raw model outputs into standardized format."""
+        ...
+
+
+class BaseClassifier(ABC):
+    """Abstract base for gatekeeper classification models."""
+
+    @abstractmethod
+    def build(self, config: dict) -> torch.nn.Module:
+        ...
+
+    @abstractmethod
+    def predict(self, model, image) -> dict:
+        ...
+```
+
+#### [NEW] [registry.py](file:///D:/vehicle-detection/src/models/registry.py)
+
+```python
+MODEL_REGISTRY = {}
+
+def register_model(name):
+    def decorator(cls):
+        MODEL_REGISTRY[name] = cls
+        return cls
+    return decorator
+
+def get_model(name):
+    if name not in MODEL_REGISTRY:
+        raise ValueError(f"Model '{name}' not in registry. Available: {list(MODEL_REGISTRY.keys())}")
+    return MODEL_REGISTRY[name]
+```
+
+#### [NEW] [maskrcnn.py](file:///D:/vehicle-detection/src/models/damage/maskrcnn.py) — example registered model
+
+```python
+@register_model("maskrcnn_resnet50_damage")
+class MaskRCNNDamage(BaseDetector):
+    def build(self, config):
+        model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=config.pretrained)
+        # Swap heads for num_classes
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, config.num_classes)
+        in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
+        model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, 256, config.num_classes)
+        return model
+
+    def compute_loss(self, model, images, targets):
+        return model(images, targets)  # Mask R-CNN returns loss dict in train mode
+
+    def post_process(self, predictions, confidence_threshold=0.5):
+        # Filter by confidence, apply NMS, return standardized dicts
+        ...
+```
+
+**To add a new strategy** (e.g., YOLOv8 segmentation), you just:
+1. Create `src/models/damage/yolov8_seg.py`
+2. Implement `BaseDetector`
+3. Decorate with `@register_model("yolov8_seg_damage")`
+4. Create `configs/damage/yolov8_seg.yaml` pointing to it
+
+**No other code changes required.**
+
+---
+
+### Component 3: Data Pipeline
+
+#### [NEW] [dataset.py](file:///D:/vehicle-detection/src/data/dataset.py)
+
+Two dataset classes:
+
+| Class | Use | Format |
+|-------|-----|--------|
+| `ClassificationDataset` | Gatekeeper (Stage 1) | Folder-based: `damaged/` vs `undamaged/` |
+| `COCOSegmentationDataset` | Damage & Parts (Stages 2 & 3) | COCO JSON with polygon masks |
+
+Both return standardized outputs compatible with PyTorch DataLoader.
+
+#### [NEW] [augmentations.py](file:///D:/vehicle-detection/src/data/augmentations.py)
+
+Uses **Albumentations** (correctly transforms masks alongside images). Configurable from YAML:
+
+```python
+def build_augmentation_pipeline(config, is_train=True):
+    """Build augmentation pipeline from config dict."""
+    transforms = []
+    if is_train:
+        if config.augmentation.horizontal_flip:
+            transforms.append(A.HorizontalFlip(p=config.augmentation.horizontal_flip))
+        if config.augmentation.rotation_limit:
+            transforms.append(A.Rotate(limit=config.augmentation.rotation_limit))
+        if config.augmentation.color_jitter:
+            transforms.append(A.ColorJitter(**config.augmentation.color_jitter))
+    transforms.append(A.Normalize(**config.augmentation.normalize))
+    transforms.append(ToTensorV2())
+    return A.Compose(transforms, bbox_params=A.BboxParams(...), ...)
+```
+
+#### [NEW] [splits.py](file:///D:/vehicle-detection/src/data/splits.py)
+
+Reproducible stratified train/val/test splitting with configurable ratios. Saves split indices to JSON for reproducibility.
+
+---
+
+### Component 4: Training Engine
+
+#### [NEW] [trainer.py](file:///D:/vehicle-detection/src/training/trainer.py)
+
+A **model-agnostic** training loop. It doesn't import any specific model — it receives one via the registry.
+
+```python
+class Trainer:
+    def __init__(self, config, model_wrapper, train_loader, val_loader, callbacks=None):
+        self.config = config
+        self.model = model_wrapper.build(config.model).to(self.device)
+        self.optimizer = OptimizerFactory.create(config.training.optimizer, self.model)
+        self.scheduler = SchedulerFactory.create(config.training.scheduler, self.optimizer)
+        self.scaler = torch.cuda.amp.GradScaler(enabled=config.training.amp)
+        self.callbacks = callbacks or []
+
+    def train_one_epoch(self, epoch):
+        self.model.train()
+        for batch_idx, (images, targets) in enumerate(self.train_loader):
+            with torch.cuda.amp.autocast(enabled=self.config.training.amp):
+                loss_dict = self.model_wrapper.compute_loss(self.model, images, targets)
+                total_loss = sum(loss_dict.values()) / self.config.training.gradient_accumulation
+
+            self.scaler.scale(total_loss).backward()
+
+            if (batch_idx + 1) % self.config.training.gradient_accumulation == 0:
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+
+        self.scheduler.step()
+        return loss_dict
+
+    def fit(self):
+        for epoch in range(self.config.training.epochs):
+            train_losses = self.train_one_epoch(epoch)
+            val_metrics = self.evaluate(epoch)
+            for cb in self.callbacks:
+                cb.on_epoch_end(epoch, train_losses, val_metrics, self.model)
+```
+
+#### [NEW] [optimizers.py](file:///D:/vehicle-detection/src/training/optimizers.py)
+
+Factory that creates optimizers by name from config:
+
+```python
+class OptimizerFactory:
+    @staticmethod
+    def create(config, model):
+        params = [p for p in model.parameters() if p.requires_grad]
+        if config.name == "sgd":
+            return torch.optim.SGD(params, lr=config.lr, momentum=config.momentum, weight_decay=config.weight_decay)
+        elif config.name == "adam":
+            return torch.optim.Adam(params, lr=config.lr, weight_decay=config.weight_decay)
+        elif config.name == "adamw":
+            return torch.optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
+```
+
+#### [NEW] [schedulers.py](file:///D:/vehicle-detection/src/training/schedulers.py)
+
+Same factory pattern for LR schedulers: `step`, `cosine`, `onecycle`, `plateau`.
+
+#### [NEW] [callbacks.py](file:///D:/vehicle-detection/src/training/callbacks.py)
+
+Pluggable callbacks:
+
+| Callback | Purpose |
+|----------|---------|
+| `CheckpointCallback` | Save model every N epochs + save best by metric |
+| `EarlyStoppingCallback` | Stop if metric doesn't improve for `patience` epochs |
+| `LoggingCallback` | Write losses/metrics to CSV + console |
+| `TensorBoardCallback` | Optional TensorBoard integration |
+| `WandBCallback` | Optional Weights & Biases integration |
+
+---
+
+### Component 5: Evaluation & Comparison
+
+#### [NEW] [metrics.py](file:///D:/vehicle-detection/src/evaluation/metrics.py)
+
+Implements COCO-style mAP evaluation using `pycocotools`:
+
+- `mAP@0.5`, `mAP@0.75`, `mAP@0.5:0.95`
+- Per-class precision/recall
+- Mask IoU (for segmentation models)
+- Binary accuracy, F1 (for gatekeeper)
+
+#### [NEW] [comparator.py](file:///D:/vehicle-detection/src/evaluation/comparator.py)
+
+Loads metrics from multiple experiment `runs/` directories and generates comparison tables/charts:
+
+```
+$ python scripts/compare.py --runs damage_maskrcnn_v1 damage_swin_v1 damage_yolov8_v1
+
+╔══════════════════════╦═══════════╦═══════════╦══════════╗
+║ Experiment           ║ mAP@0.5   ║ mAP@0.5:95║ Params   ║
+╠══════════════════════╬═══════════╬═══════════╬══════════╣
+║ damage_maskrcnn_v1   ║ 0.847     ║ 0.621     ║ 44.2M    ║
+║ damage_swin_v1       ║ 0.891     ║ 0.687     ║ 48.8M    ║
+║ damage_yolov8_v1     ║ 0.872     ║ 0.654     ║ 11.2M    ║
+╚══════════════════════╩═══════════╩═══════════╩══════════╝
+```
+
+---
+
+### Component 6: Inference Pipeline & Orchestrator
+
+#### [NEW] [pipeline.py](file:///D:/vehicle-detection/src/inference/pipeline.py)
+
+End-to-end 3-stage pipeline:
+
+```python
+class VehicleDamagePipeline:
+    def __init__(self, gatekeeper_ckpt, damage_ckpt, parts_ckpt, config):
+        self.gatekeeper = self._load_model("gatekeeper", gatekeeper_ckpt)
+        self.damage_model = self._load_model("damage", damage_ckpt)
+        self.parts_model = self._load_model("parts", parts_ckpt)
+        self.orchestrator = Orchestrator(config.inference.iou_threshold)
+
+    def __call__(self, image_path: str) -> dict:
+        image = self.preprocess(image_path)
+
+        # Stage 1: Gatekeeper
+        gate_result = self.gatekeeper.predict(image)
+        if not gate_result["is_damaged"]:
+            return {"status": "no_damage", "confidence": gate_result["confidence"]}
+
+        # Stage 2 & 3: Run in parallel (or sequential)
+        damage_masks = self.damage_model.predict(image)
+        part_masks = self.parts_model.predict(image)
+
+        # Stage 4: Orchestrate
+        report = self.orchestrator.map_damage_to_parts(damage_masks, part_masks)
+        return {"status": "damaged", "findings": report}
+```
+
+#### [NEW] [orchestrator.py](file:///D:/vehicle-detection/src/inference/orchestrator.py)
+
+Improved IoU overlap logic from the original plan, with configurable thresholds and severity classification based on damage mask area.
+
+---
+
+### Component 7: CLI Entry Points
+
+#### [NEW] [train.py](file:///D:/vehicle-detection/scripts/train.py)
+
+```bash
+# Train with a specific strategy config
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml
+
+# Override specific params via CLI
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml \
+    --set training.lr=0.001 training.epochs=30
+
+# Resume from checkpoint
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml \
+    --resume runs/damage_maskrcnn_v1/checkpoints/epoch_15.pth
+```
+
+#### [NEW] [evaluate.py](file:///D:/vehicle-detection/scripts/evaluate.py)
+
+```bash
+python scripts/evaluate.py --checkpoint runs/damage_maskrcnn_v1/best.pth \
+    --data data/processed/test --output results/
+```
+
+#### [NEW] [infer.py](file:///D:/vehicle-detection/scripts/infer.py)
+
+```bash
+python scripts/infer.py --image test_car.jpg \
+    --gatekeeper runs/gatekeeper_v1/best.pth \
+    --damage runs/damage_v1/best.pth \
+    --parts runs/parts_v1/best.pth
+```
+
+---
+
+## How Strategy Swapping Works in Practice
+
+Here's a concrete example of how you'd experiment with different approaches:
+
+### Experiment 1: Baseline Mask R-CNN (ResNet50)
+```bash
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml
+# → runs/damage_maskrcnn_resnet50_v1/
+```
+
+### Experiment 2: Swap backbone to Swin Transformer
+```bash
+python scripts/train.py --config configs/damage/maskrcnn_swin.yaml
+# → runs/damage_maskrcnn_swin_v1/
+```
+
+### Experiment 3: Try YOLOv8 segmentation entirely
+```bash
+python scripts/train.py --config configs/damage/yolov8_seg.yaml
+# → runs/damage_yolov8_seg_v1/
+```
+
+### Experiment 4: Same model, different training strategy
+```bash
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml \
+    --set training.optimizer.name=adamw training.scheduler.name=cosine training.epochs=60
+# → runs/damage_maskrcnn_resnet50_adamw_cosine/
+```
+
+### Compare all
+```bash
+python scripts/compare.py --runs damage_maskrcnn_resnet50_v1 damage_maskrcnn_swin_v1 damage_yolov8_seg_v1
+```
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Dataset choice:** Will you use the VehiDE dataset (~13,945 images) mentioned in the original plan, a custom dataset, or both? This affects the data pipeline implementation (download scripts, format converters).
+
+> [!IMPORTANT]
+> **Damage classes:** The original plan lists generic damage types. What specific damage classes do you want? A common set is: `scratch`, `dent`, `crack`, `broken_part`, `shattered_glass`, `tear`. Confirm or modify.
+
+> [!IMPORTANT]
+> **Part classes:** Similarly, confirm the car part classes: `hood`, `front_bumper`, `rear_bumper`, `left_fender`, `right_fender`, `left_front_door`, `right_front_door`, `left_rear_door`, `right_rear_door`, `trunk`, `roof`, `windshield`, `rear_window`, `headlight`, `taillight`.
+
+> [!NOTE]
+> **Experiment tracking:** Do you want Weights & Biases (wandb) integration, TensorBoard, or just CSV logs? The callback system supports all three — just need to know your preference for initial implementation.
+
+> [!NOTE]
+> **Deployment target:** The original plan mentions AWS (ECS + Graviton). Should the initial implementation include Dockerfile and API server (FastAPI), or focus purely on the training/evaluation pipeline first?
+
+---
+
+## Verification Plan
+
+### Automated Tests
+```bash
+# Unit tests for each component
+pytest tests/test_dataset.py      # Data loading, augmentation, splits
+pytest tests/test_models.py       # Model registry, build, forward pass
+pytest tests/test_trainer.py      # Training loop (1-epoch smoke test)
+pytest tests/test_pipeline.py     # End-to-end inference pipeline
+```
+
+### Manual Verification
+1. **Smoke training run** — Train each model for 2-3 epochs on a small subset to confirm the full loop (data → model → loss → checkpoint) works
+2. **Config override** — Verify CLI `--set` overrides actually change behavior
+3. **Strategy swap** — Train with two different configs, confirm separate experiment directories and independent metrics
+4. **Inference pipeline** — Run `scripts/infer.py` on a test image and verify the JSON output contains damage-to-part mappings
+5. **Comparison** — Run `scripts/compare.py` on two experiment runs and verify the output table is correct
+
+---
+
+## Implementation Timeline
+
+| Phase | Files | Estimated Effort |
+|-------|-------|-----------------|
+| **Phase 1: Foundation** | `src/utils/`, `configs/base.yaml`, `requirements.txt`, `setup.py` | ~1 day |
+| **Phase 2: Data Pipeline** | `src/data/` (dataset, augmentations, splits, preprocessing) | ~1-2 days |
+| **Phase 3: Model Registry** | `src/models/` (base, registry, gatekeeper models, damage Mask R-CNN) | ~1-2 days |
+| **Phase 4: Training Engine** | `src/training/` (trainer, optimizers, schedulers, callbacks, AMP) | ~1-2 days |
+| **Phase 5: Evaluation** | `src/evaluation/` (metrics, evaluator, comparator) | ~1 day |
+| **Phase 6: Inference** | `src/inference/` (pipeline, orchestrator, exporters) | ~1 day |
+| **Phase 7: CLI & Scripts** | `scripts/` (train, evaluate, compare, infer, export) | ~0.5 day |
+| **Phase 8: Tests** | `tests/` | ~1 day |
+| **Phase 9: Additional Strategies** | YOLOv8, Swin, YOLACT model implementations | Per strategy |
