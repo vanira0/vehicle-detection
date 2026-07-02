@@ -16,19 +16,25 @@ model:
   pretrained: true
   fpn: true
   trainable_backbone_layers: 3     # Fine-tune top 3 layers of backbone
-  min_size: 800
-  max_size: 1333
+  min_size: 512
+  max_size: 800
 
 data:
   annotation_format: coco
-  image_size: 1024
+  image_size: 512
 
 training:
   epochs: 50
   batch_size: 2
+  gradient_clip_norm: 1.0
+  early_stopping:
+    enabled: true
+    patience: 5
+    metric: loss
+    mode: min
   optimizer:
     name: sgd
-    lr: 0.005
+    lr: 0.001
     momentum: 0.9
     weight_decay: 0.0005
   scheduler:

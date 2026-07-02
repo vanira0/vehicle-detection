@@ -251,6 +251,7 @@ class Trainer:
 
         # Average losses
         avg_losses = {k: v / max(num_batches, 1) for k, v in epoch_losses.items()}
+        avg_losses["loss"] = sum(avg_losses.values())
         self.logger.info(
             f"Epoch {epoch} | "
             + " | ".join(f"{k}: {v:.4f}" for k, v in avg_losses.items())
@@ -336,6 +337,7 @@ class Trainer:
             num_batches += 1
 
         avg_losses = {k: v / max(num_batches, 1) for k, v in val_losses.items()}
+        avg_losses["loss"] = sum(avg_losses.values())
         self.logger.info(
             f"Validation | "
             + " | ".join(f"{k}: {v:.4f}" for k, v in avg_losses.items())
