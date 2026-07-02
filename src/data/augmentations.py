@@ -129,7 +129,7 @@ def build_segmentation_augmentation(
             pad_height_divisor=32,   # Ensure divisible by 32 for FPN
             pad_width_divisor=32,
             border_mode=0,           # cv2.BORDER_CONSTANT
-            value=0,
+            fill=0,
         )
     )
 

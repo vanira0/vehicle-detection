@@ -41,3 +41,5 @@ pytest>=7.4.0
 
 # Optional: Ultralytics YOLOv8 (uncomment to enable YOLOv8 strategies)
 # ultralytics>=8.0.0
+
+roboflow

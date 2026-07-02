@@ -107,16 +107,16 @@ def build_data_loaders(config):
         train_transform = build_augmentation_pipeline(config, is_train=True)
         val_transform = build_augmentation_pipeline(config, is_train=False)
 
-        annotations_dir = getattr(data_cfg, "annotations_dir", "data/annotations")
+        dataset_dir = "data"
 
         train_dataset = COCOSegmentationDataset(
-            root=os.path.join(data_cfg.root, "train"),
-            annotation_file=os.path.join(annotations_dir, "train.json"),
+            root=os.path.join(dataset_dir, "train"),
+            annotation_file=os.path.join(dataset_dir, "train", "_annotations.coco.json"),
             transform=train_transform,
         )
         val_dataset = COCOSegmentationDataset(
-            root=os.path.join(data_cfg.root, "val"),
-            annotation_file=os.path.join(annotations_dir, "val.json"),
+            root=os.path.join(dataset_dir, "valid"),
+            annotation_file=os.path.join(dataset_dir, "valid", "_annotations.coco.json"),
             transform=val_transform,
         )
 

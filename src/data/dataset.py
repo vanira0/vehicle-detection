@@ -233,3 +233,44 @@ def collate_fn(batch):
     (not stacked tensors), because images/targets can have different sizes.
     """
     return tuple(zip(*batch))
+
+
+# def download_roboflow_dataset(
+#     api_key: str,
+#     workspace: str,
+#     project: str,
+#     version: int,
+#     export_format: str = "yolov8",
+#     dest_dir: Optional[str] = None
+# ) -> str:
+#     """
+#     Downloads a dataset from Roboflow.
+    
+#     Args:
+#         api_key: Your Roboflow API Key.
+#         workspace: The Roboflow workspace name.
+#         project: The Roboflow project name.
+#         version: The dataset version number.
+#         export_format: The format to export to (e.g., 'yolov8', 'coco').
+#         dest_dir: Destination directory for the dataset.
+        
+#     Returns:
+#         The path to the downloaded dataset.
+#     """
+#     try:
+#         from roboflow import Roboflow
+#     except ImportError:
+#         raise ImportError("Please install the roboflow package using `pip install roboflow`")
+        
+#     rf = Roboflow(api_key=api_key)
+#     proj = rf.workspace(workspace).project(project)
+#     vers = proj.version(version)
+    
+#     # download to the current working directory or dest_dir
+#     if dest_dir:
+#         dataset = vers.download(export_format, location=dest_dir)
+#     else:
+#         dataset = vers.download(export_format)
+        
+#     return dataset.location
+
