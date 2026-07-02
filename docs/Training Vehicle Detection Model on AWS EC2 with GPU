@@ -1,0 +1,81 @@
+# Training Vehicle Detection Model on AWS EC2 with GPU
+
+This plan outlines the steps required to provision an AWS EC2 instance, set up the environment, and run the training pipeline for the vehicle detection model using a GPU.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **AWS Costs:** GPU instances on AWS are billed per hour and can be expensive. A `g4dn.xlarge` costs approximately $0.52/hour, while a `g5.xlarge` costs around $1.00/hour. Remember to stop or terminate the instance when training is complete to avoid unexpected charges.
+
+> [!WARNING]
+> **Security:** Ensure that the Security Group attached to your EC2 instance restricts SSH access (Port 22) only to your IP address to prevent unauthorized access.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. Do you already have an AWS account with the necessary limits for GPU instances (e.g., G-instances)? Sometimes AWS requires a quota increase request for these instances.
+> 2. How is your dataset currently hosted? Will you upload it directly from your local machine, or is it available on AWS S3 / Roboflow?
+> 3. Do you prefer using Docker for environment isolation, or are you comfortable using Python virtual environments directly on the instance?
+
+## Proposed Approach
+
+The most efficient way to train PyTorch models on AWS without managing drivers manually is to use the **Deep Learning AMI GPU PyTorch**.
+
+### 1. Provisioning the EC2 Instance
+* **Instance Type:** `g4dn.xlarge` (1x NVIDIA T4 GPU, 16GB VRAM) or `g5.xlarge` (1x NVIDIA A10G, 24GB VRAM). The `g5` series is significantly faster but slightly more expensive.
+* **AMI (Amazon Machine Image):** Search for and select the **"Deep Learning AMI GPU PyTorch x.x.x (Ubuntu 20.04 or 22.04)"** in the AWS marketplace. This AMI comes pre-installed with NVIDIA drivers, CUDA toolkits, and PyTorch environments.
+* **Storage (EBS):** Attach a `gp3` volume with at least 100GB of storage to accommodate the dataset, Docker images (if used), and model checkpoints.
+
+### 2. Initial Setup and Data Transfer
+Once the instance is running and you are connected via SSH:
+
+1. **Clone Repository:** Clone your `vehicle-detection` repository onto the instance.
+2. **Transfer Data:**
+   - **Option A (SCP):** Use `scp` to copy the `front_kr-1` folder from your local machine to the EC2 instance.
+     ```bash
+     scp -i /path/to/key.pem -r c:\Users\Administrator\Desktop\vehicle-detection\front_kr-1 ubuntu@<EC2_IP>:~/vehicle-detection/
+     ```
+   - **Option B (S3):** Upload your data to an S3 bucket and use the `aws s3 sync` command on the EC2 instance.
+   - **Option C (Roboflow):** Since you have `roboflow` in your `requirements.txt`, you could run your data download script directly on the instance.
+
+### 3. Environment Configuration
+The Deep Learning AMI comes with Conda environments. You can activate the PyTorch environment or create a new one:
+
+```bash
+# Activate pre-installed PyTorch environment
+source activate pytorch
+
+# Or create a new standard python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install requirements
+cd vehicle-detection
+pip install -r requirements.txt
+```
+
+### 4. Running the Training
+Since training can take several hours, we should ensure it continues even if the SSH connection drops. We'll use `tmux`.
+
+```bash
+# Start a tmux session
+tmux new -s training
+
+# Run the training script
+python scripts/train.py --config configs/damage/maskrcnn_resnet50.yaml
+
+# To detach from the session (leave it running in background): Press Ctrl+b, then d
+# To reattach later: tmux attach -t training
+```
+
+### 5. Monitoring and Artifact Retrieval
+* **Monitoring:** You can use TensorBoard. Start it in another `tmux` window: `tensorboard --logdir=runs/`. You can view it by setting up an SSH tunnel to port 6006.
+* **Retrieval:** After training completes, copy the checkpoints and logs back to your local machine using `scp` or push them to an S3 bucket.
+
+## Verification Plan
+
+### Manual Verification
+1. Launch the EC2 instance and successfully SSH into it.
+2. Verify GPU availability by running `nvidia-smi` inside the instance.
+3. Start training for 1-2 epochs and ensure no CUDA out-of-memory errors occur and the loss is decreasing.
+4. Verify that checkpoints are being saved to the `runs/` directory on the instance.
