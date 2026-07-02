@@ -153,6 +153,17 @@ class COCOSegmentationDataset(Dataset):
         iscrowd = []
 
         for ann in anns:
+            # Filter out annotations with missing or empty segmentations
+            if "segmentation" not in ann or not ann["segmentation"]:
+                continue
+            
+            if isinstance(ann["segmentation"], list):
+                # A valid polygon in COCO needs at least 6 coordinates (3 points)
+                valid_segm = [poly for poly in ann["segmentation"] if len(poly) >= 6]
+                if not valid_segm:
+                    continue
+                ann["segmentation"] = valid_segm
+
             # Get binary mask from annotation
             mask = self.coco.annToMask(ann)
             area = mask.sum()
@@ -207,7 +218,12 @@ class COCOSegmentationDataset(Dataset):
                 )
                 labels = np.array([], dtype=np.int64)
         elif self.transform:
-            transformed = self.transform(image=image)
+            transformed = self.transform(
+                image=image,
+                masks=[],
+                bboxes=[],
+                labels=[],
+            )
             image = transformed["image"]
 
         # Convert to tensors

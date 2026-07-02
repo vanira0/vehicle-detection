@@ -190,9 +190,12 @@ def _compute_ap_for_class(
     if num_gt == 0:
         return 0.0
 
+    if len(all_matches) == 0:
+        return 0.0
+
     # Sort by score
     sorted_idx = np.argsort(-np.array(all_scores))
-    matches = np.array(all_matches)[sorted_idx]
+    matches = np.array(all_matches, dtype=bool)[sorted_idx]
 
     # Compute precision-recall curve
     tp_cumsum = np.cumsum(matches)
