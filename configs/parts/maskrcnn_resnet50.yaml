@@ -11,7 +11,7 @@ experiment_name: parts_maskrcnn_resnet50_v1
 model:
   name: maskrcnn_resnet50
   stage: parts
-  num_classes: 5                  # bg + 15 part classes
+  num_classes: 6                  # bg + 5 part classes (vehicle-body-part, bonnet, front_bumper, front_windshield, headlamp)
   backbone: resnet50
   pretrained: true
   fpn: true
@@ -20,6 +20,7 @@ model:
   max_size: 800
 
 data:
+  root: front_kr-1
   annotation_format: coco
   image_size: 512
 
