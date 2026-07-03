@@ -3,6 +3,7 @@
 # =============================================================================
 # Stage 2: Instance segmentation of damage types.
 # Baseline strategy using torchvision's pretrained Mask R-CNN.
+# Set 2: Add damage and part labels to the dataset
 # =============================================================================
 
 _base_: ../base.yaml
