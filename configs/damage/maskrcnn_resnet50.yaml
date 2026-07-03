@@ -11,7 +11,7 @@ experiment_name: damage_maskrcnn_resnet50_v1
 model:
   name: maskrcnn_resnet50
   stage: damage
-  num_classes: 7                   # bg + scratch + dent + crack + broken + shatter + tear
+  num_classes: 6                  # bg + 5 part classes (using front_kr-1 dataset for now)
   backbone: resnet50
   pretrained: true
   fpn: true

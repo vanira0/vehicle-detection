@@ -107,7 +107,7 @@ def build_data_loaders(config):
         train_transform = build_augmentation_pipeline(config, is_train=True)
         val_transform = build_augmentation_pipeline(config, is_train=False)
 
-        dataset_dir = "front_kr-1"
+        dataset_dir = getattr(data_cfg, "root", "front_kr-1")
 
         train_dataset = COCOSegmentationDataset(
             root=os.path.join(dataset_dir, "train"),
