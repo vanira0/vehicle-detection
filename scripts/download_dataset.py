@@ -8,8 +8,8 @@ def main():
     
     # Get the API key from the environment
     api_key = os.getenv("ROBOFLOW_API_KEY")
-    workspace_name = os.getenv("ROBOFLOW_WORKSPACE_NAME", "vehicle-damage-detection-93l5j") 
-    project_name = os.getenv("ROBOFLOW_PROJECT_NAME", "front_kr")
+    workspace_name = os.getenv("ROBOFLOW_WORKSPACE") 
+    project_name = os.getenv("ROBOFLOW_PROJECT")
     project_version = os.getenv("ROBOFLOW_PROJECT_VERSION", "1")
     if not api_key:
         print("Error: ROBOFLOW_API_KEY not found in .env file.")
