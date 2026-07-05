@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import glob
+import csv
 
 import cv2
 import numpy as np
@@ -73,6 +74,11 @@ def main():
     np.random.seed(42)
     colors = np.random.randint(0, 255, size=(100, 3), dtype=np.uint8)
     
+    csv_path = os.path.join(args.output_dir, "predictions.csv")
+    with open(csv_path, "w", newline="") as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerow(["image_name", "classes", "scores", "boxes"])
+    
     for img_path in image_paths:
         logger.info(f"Processing: {img_path}")
         try:
@@ -96,6 +102,10 @@ def main():
             masks = results.get("masks", None)
             
             # Draw results on the image
+            img_classes = []
+            img_scores = []
+            img_boxes = []
+            
             for i in range(len(boxes)):
                 box = boxes[i].astype(int)
                 label = int(labels[i])
@@ -112,6 +122,11 @@ def main():
                 else:
                     label_str = f"Class {label}"
                 label_text = f"{label_str} ({score:.2f})"
+                
+                img_classes.append(label_str)
+                img_scores.append(f"{score:.4f}")
+                img_boxes.append(f"[{box[0]}, {box[1]}, {box[2]}, {box[3]}]")
+                
                 cv2.putText(
                     image_bgr, label_text, (box[0], box[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
@@ -130,6 +145,16 @@ def main():
 
             # Save output image
             base_name = os.path.basename(img_path)
+            
+            with open(csv_path, "a", newline="") as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerow([
+                    base_name,
+                    ", ".join(img_classes),
+                    ", ".join(img_scores),
+                    ", ".join(img_boxes)
+                ])
+                
             output_path = os.path.join(args.output_dir, base_name)
             cv2.imwrite(output_path, image_bgr)
             

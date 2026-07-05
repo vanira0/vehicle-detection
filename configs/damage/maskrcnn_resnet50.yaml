@@ -12,7 +12,7 @@ experiment_name: damage_maskrcnn_resnet50_v1
 model:
   name: maskrcnn_resnet50
   stage: damage
-  num_classes: 4                  # bg + 4 part classes (using damage_kr-1 dataset for now)
+  num_classes: 5                 # bg + 4 part classes (using damage_kr-1 dataset for now)
   backbone: resnet50
   pretrained: true
   fpn: true
@@ -24,7 +24,7 @@ data:
   root: damage_kr-1
   annotation_format: coco
   image_size: 512
-  class_names: ["background", "broken", "dent", "scratch"]
+  class_names: ["background", "broken", "dent", "scratch", "unknown"]
 
 training:
   epochs: 50
