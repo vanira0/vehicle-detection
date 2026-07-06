@@ -34,6 +34,7 @@ import models.gatekeeper  # noqa: F401
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
 import models.yolo_segmentation # noqa: F401
+import models.maskrcnn_segmentation # noqa: F401
 
 from training.callbacks import (
     CallbackList,

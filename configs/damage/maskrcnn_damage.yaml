@@ -1,0 +1,29 @@
+_base_: ../base.yaml
+
+experiment_name: maskrcnn_damage_seg_v1
+
+model:
+  name: maskrcnn_seg
+  stage: damage
+  num_classes: 2 # Assuming 2 classes: background and damage
+
+data:
+  root: data/coco_dataset
+  image_size: 640
+  num_workers: 4
+  pin_memory: true
+
+training:
+  epochs: 50
+  batch_size: 4 # Mask R-CNN consumes more memory than YOLO, lower batch size
+  optimizer:
+    lr: 0.005
+    weight_decay: 0.0005
+  early_stopping:
+    enabled: true
+    patience: 10
+  checkpoint:
+    save_best: true
+
+output:
+  runs_dir: runs/damage_maskrcnn
