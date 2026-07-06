@@ -33,6 +33,7 @@ from models.registry import get_model
 import models.gatekeeper  # noqa: F401
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
+import models.yolo_segmentation # noqa: F401
 
 from training.callbacks import (
     CallbackList,
@@ -199,15 +200,22 @@ def main():
     # Set seed
     set_seed(getattr(config, "seed", 42))
 
-    # Build data loaders
-    logger.info("Building data loaders...")
-    train_loader, val_loader = build_data_loaders(config)
-    logger.info(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-
     # Get model from registry
     model_name = config.model.name
     logger.info(f"Loading model strategy: {model_name}")
     model_wrapper = get_model(model_name)()
+    
+    if hasattr(model_wrapper, "train_native"):
+        logger.info("Model uses native training loop. Bypassing custom PyTorch Trainer.")
+        model_wrapper.build(config.model)
+        final_metrics = model_wrapper.train_native(config)
+        logger.info(f"Native training finished. Results: {final_metrics}")
+        return
+
+    # Build data loaders
+    logger.info("Building data loaders...")
+    train_loader, val_loader = build_data_loaders(config)
+    logger.info(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
 
     # Build callbacks
     callbacks = build_callbacks(config)

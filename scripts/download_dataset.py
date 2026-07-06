@@ -22,8 +22,11 @@ def main():
     project = rf.workspace(workspace_name).project(project_name)
     version = project.version(int(project_version))
     
-    # Download the dataset in coco format
-    dataset = version.download("coco")
+    export_format = os.getenv("ROBOFLOW_EXPORT_FORMAT", "yolov8")
+    
+    # Download the dataset
+    print(f"Exporting in {export_format} format...")
+    dataset = version.download(export_format)
     
     print(f"Dataset successfully downloaded to: {dataset.location}")
     print("You can now move these files to your data/ directory if needed.")

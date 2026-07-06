@@ -38,3 +38,5 @@ front_kr-1/
 output_img_*
 input_img_*
 rf_ds_*  # roboflow dataset naming convention
+
+.kaggle

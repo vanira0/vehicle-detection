@@ -1,0 +1,21 @@
+_base_: ../base.yaml
+
+experiment_name: yolo11_damage_seg_v1
+
+model:
+  name: yolo11_seg
+  stage: damage
+  weights: yolo11s-seg.pt
+
+data:
+  yaml_path: data/kaggle/data.yaml
+  image_size: 640
+
+training:
+  epochs: 50
+  batch_size: 16
+  optimizer:
+    lr: 0.01
+
+output:
+  runs_dir: runs/damage_yolo11
