@@ -15,9 +15,11 @@ model:
   backbone: resnet50                            # The feature extractor network (ResNet-50)
   pretrained: true                              # Whether to start with ImageNet pre-trained weights for the backbone
   fpn: true                                     # Uses a Feature Pyramid Network (FPN) to better detect objects at multiple scales
-  trainable_backbone_layers: 3                  # Number of top backbone layers to fine-tune (0-5, where 5 means all layers)
-  min_size: 512                                 # Minimum image dimension (shorter edge) resized during preprocessing
+  trainable_backbone_layers: 5                  # Number of top backbone layers to fine-tune (0-5, where 5 means all layers)
+  min_size: 640                                 # Minimum image dimension (shorter edge) resized during preprocessing
   max_size: 800                                 # Maximum image dimension (longer edge) resized during preprocessing
+  mask_loss_weight: 2.0                         # Weight multiplier for mask loss
+  mask_loss_type: bce_dice                      # Loss function for mask head (bce, bce_dice)
 
 data:
   root: data/rcnn_kaggle_coco                   # Root directory containing the dataset images and annotations
@@ -35,7 +37,7 @@ training:
     weight_decay: 0.0005                        # L2 penalty to prevent overfitting by penalizing large weights
   scheduler:
     name: step                                  # Learning rate scheduler type (StepLR decreases LR at fixed intervals)
-    step_size: 10                               # Number of epochs before decreasing the learning rate
-    gamma: 0.1                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
+    step_size: 15                               # Number of epochs before decreasing the learning rate
+    gamma: 0.5                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
 output:
   runs_dir: runs/parts_maskrcnn
