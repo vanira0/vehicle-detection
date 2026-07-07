@@ -40,4 +40,4 @@ training:
     step_size: 15                               # Number of epochs before decreasing the learning rate
     gamma: 0.5                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
 output:
-  runs_dir: runs/parts_maskrcnn
+  runs_dir: runs/parts_maskrcnn_v2
