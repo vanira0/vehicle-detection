@@ -1,0 +1,51 @@
+==Activate Virtual Environment
+source .venv/bin/activate
+
+==training session=======
+tmux new -s training
+tmux attach -t training
+ctrl+b,d
+
+============to download training weights===========
+tar -czvf all_runs.tar.gz runs/parts_maskrcnn/
+
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.tar.gz "C:/Users/Administrator/Desktop/trained_models"
+
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.zip  "C:/Users/Administrator/Desktop/trained_models"
+
+
+
+yolo26n.pt
+============for single image=======================
+python scripts/inference.py \
+  --config configs/damage/maskrcnn_resnet50.yaml \
+  --checkpoint runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth \
+  --image image_testing/11_crop_small.jpg \
+  --conf-thresh 0.5 \
+  --output image_tested/11_crop_small.jpg
+  
+  
+=============for bulk image========================  
+python scripts/bulk_inference.py \
+	--config "configs/damage/maskrcnn_resnet50.yaml" \
+	--checkpoint "runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth" \
+	--image-dir "input_img_testing" \
+	--output-dir "output_img_tested"
+
+  
+python scripts/bulk_inference.py \
+	--config "configs/parts/maskrcnn_resnet50.yaml" \
+	--checkpoint "runs/parts_maskrcnn_resnet50_v1/checkpoints/best.pth" \
+	--image-dir "input_img_testing" \
+	--output-dir "output_img_parts"
+
+
+===supervisely to yolo==============
+python3 scripts/convert_supervisely_to_yolo.py --input "data/kaggle/car-parts-and-car-damages/Car damages dataset" --output "data/yolo_car_damages"
+
+python3 scripts/convert_supervisely_to_coco.py --input "data/kaggle/car-parts-and-car-damages/car_parts_dataset --output "data/Rcnn_coco_car_parts"
+
+===part training script=============
+python3 scripts/train.py --config configs/parts/yolo11_parts.yaml --set data.yaml_path=data/yolo_car_damages/dataset.yaml
+
+python scripts/train.py --config configs/parts/maskrcnn_resnet50.yaml
