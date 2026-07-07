@@ -37,3 +37,5 @@ training:
     name: step                                  # Learning rate scheduler type (StepLR decreases LR at fixed intervals)
     step_size: 10                               # Number of epochs before decreasing the learning rate
     gamma: 0.1                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
+output:
+  runs_dir: runs/parts_maskrcnn
