@@ -13,6 +13,7 @@ data:
 
 training:
   epochs: 50
+  patience: 5
   batch_size: 16
   optimizer:
     lr: 0.01
