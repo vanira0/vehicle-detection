@@ -28,7 +28,11 @@ data:
 
 training:
   epochs: 50                                    # Total number of complete passes through the training dataset
-  patience: 5                                   # Early stopping patience: stop training if no improvement after 5 epochs
+  early_stopping:
+    enabled: true
+    patience: 5
+    metric: loss
+    mode: min                                   # Early stopping patience: stop training if no improvement after 5 epochs
   batch_size: 8                                 # Number of images processed in parallel before updating model weights
   optimizer:
     name: sgd                                   # Stochastic Gradient Descent optimizer used to update model weights
