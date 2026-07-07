@@ -25,6 +25,13 @@ data:
   root: data/rcnn_kaggle_coco                   # Root directory containing the dataset images and annotations
   annotation_format: coco                       # Format of the bounding box and mask annotations (COCO format)
   image_size: 512                               # Target image size for training and inference
+  class_names: [
+    "Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk", 
+    "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", 
+    "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", 
+    "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", 
+    "Mirror", "Roof"
+  ]
 
 training:
   epochs: 50                                    # Total number of complete passes through the training dataset
