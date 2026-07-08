@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
 Evaluate a trained model checkpoint on a test dataset.
 
@@ -25,7 +25,8 @@ from data.dataset import ClassificationDataset, COCOSegmentationDataset, collate
 from evaluation.evaluator import Evaluator
 from models.registry import get_model
 
-import models.gatekeeper  # noqa: F401
+import models.gatekeeper
+import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
 

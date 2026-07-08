@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
 Train a model using a YAML configuration file.
 
@@ -30,7 +30,8 @@ from evaluation.evaluator import Evaluator
 from models.registry import get_model
 
 # Import model packages to trigger registration
-import models.gatekeeper  # noqa: F401
+import models.gatekeeper
+import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
 import models.yolo_segmentation # noqa: F401

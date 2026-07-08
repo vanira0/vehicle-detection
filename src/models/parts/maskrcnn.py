@@ -48,11 +48,21 @@ class MaskRCNNResNet50Parts(BaseDetector):
         max_size = getattr(model_config, "max_size", 1333)
 
         weights = "DEFAULT" if pretrained else None
+        
+        from torchvision.models.detection.anchor_utils import AnchorGenerator
+        # Custom anchor boxes for car parts (long, thin rectangles)
+        anchor_generator = AnchorGenerator(
+            sizes=((32,), (64,), (128,), (256,), (512,)),
+            aspect_ratios=((0.2, 0.5, 1.0, 2.0, 5.0),) * 5
+        )
+        
         model = torchvision.models.detection.maskrcnn_resnet50_fpn(
             weights=weights,
             trainable_backbone_layers=trainable_layers,
             min_size=min_size,
             max_size=max_size,
+            rpn_anchor_generator=anchor_generator,
+            box_nms_thresh=0.4,
         )
 
         # Replace heads for part classes
@@ -74,7 +84,23 @@ class MaskRCNNResNet50Parts(BaseDetector):
         images: List[torch.Tensor],
         targets: List[Dict[str, torch.Tensor]],
     ) -> Dict[str, torch.Tensor]:
-        return model(images, targets)
+        loss_dict = model(images, targets)
+        
+        # Rebalance loss weights to prioritize classification and bounding box regression
+        loss_weights = {
+            "loss_classifier": 2.0,
+            "loss_box_reg": 2.0,
+            "loss_mask": 0.5
+        }
+        
+        weighted_loss_dict = {}
+        for k, v in loss_dict.items():
+            if k in loss_weights:
+                weighted_loss_dict[k] = v * loss_weights[k]
+            else:
+                weighted_loss_dict[k] = v
+                
+        return weighted_loss_dict
 
     def post_process(
         self,

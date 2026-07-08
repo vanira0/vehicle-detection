@@ -1,0 +1,46 @@
+# =============================================================================
+# Angle Detection — ResNet50 Classifier
+# =============================================================================
+# Stage: Determines the orientation/angle of a vehicle in an image.
+# Multi-class classification: right, left, front, rear, front-right, 
+# front-left, rear-right, rear-left
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: angle_resnet50_v1
+
+model:
+  name: resnet50_angle_classifier
+  stage: angle
+  num_classes: 8                   # right, left, front, rear, etc.
+  backbone: resnet50
+  pretrained: true
+  dropout: 0.5
+  freeze_backbone_epochs: 5        # Freeze backbone for first N epochs
+
+data:
+  annotation_format:         # Folder-based: right/ left/ front/ etc.
+  image_size: 224
+  class_names: [
+    "right", "left", "front", "rear", 
+    "front-right", "front-left", "rear-right", "rear-left"
+  ]
+
+training:
+  epochs: 30
+  batch_size: 32
+  optimizer:
+    name: adam
+    lr: 0.001
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    T_max: 30
+    eta_min: 0.00001
+  early_stopping:
+    enabled: true
+    patience: 5
+    metric: loss
+    mode: min
+  checkpoint:
+    metric: accuracy

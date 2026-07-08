@@ -48,4 +48,4 @@ python3 scripts/convert_supervisely_to_coco.py --input "data/kaggle/car-parts-an
 ===part training script=============
 python3 scripts/train.py --config configs/parts/yolo11_parts.yaml --set data.yaml_path=data/yolo_car_damages/dataset.yaml
 
-python scripts/train.py --config configs/parts/maskrcnn_resnet50.yaml
+python3 scripts/train.py --config configs/parts/maskrcnn_resnet50.yaml

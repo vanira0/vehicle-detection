@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import json
 import os
 import sys
@@ -7,6 +7,7 @@ import glob
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import models.gatekeeper
+import models.angle
 import models.damage
 import models.parts
 

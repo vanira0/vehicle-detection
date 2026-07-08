@@ -9,7 +9,7 @@ ctrl+b,d
 ============to download training weights===========
 tar -czvf all_runs.tar.gz runs/parts_maskrcnn/
 
-scp -i "C:\Users\Administrator\Downloads\gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/runs.tar.gz "C:\Users\Administrator\Desktop\vehicle-detection"
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.tar.gz "C:/Users/Administrator/Desktop/trained_models"
 
 scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.zip  "C:/Users/Administrator/Desktop/trained_models"
 
@@ -34,10 +34,10 @@ python scripts/bulk_inference.py \
 
   
 python scripts/bulk_inference.py \
-	--config "configs/damage/maskrcnn_resnet50.yaml" \
-	--checkpoint "runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth" \
+	--config "configs/parts/maskrcnn_resnet50.yaml" \
+	--checkpoint "runs/parts_maskrcnn_resnet50_v1/checkpoints/best.pth" \
 	--image-dir "input_img_testing" \
-	--output-dir "output_img_vr"
+	--output-dir "output_img_parts"
 
 
 ===supervisely to yolo==============

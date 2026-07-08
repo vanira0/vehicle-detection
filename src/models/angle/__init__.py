@@ -1,0 +1,1 @@
+from .resnet_classifier import ResNet50AngleClassifier

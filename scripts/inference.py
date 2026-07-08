@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import os
 import sys
 
@@ -15,7 +15,8 @@ from models.registry import get_model
 from utils.config import Config
 
 # Import model packages to trigger registration
-import models.gatekeeper  # noqa: F401
+import models.gatekeeper
+import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
 

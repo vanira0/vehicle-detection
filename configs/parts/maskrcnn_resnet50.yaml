@@ -34,7 +34,7 @@ data:
   ]
 
 training:
-  epochs: 50                                    # Total number of complete passes through the training dataset
+  epochs: 100                                   # Total number of complete passes through the training dataset
   early_stopping:
     enabled: true
     patience: 5
@@ -43,12 +43,12 @@ training:
   batch_size: 8                                 # Number of images processed in parallel before updating model weights
   optimizer:
     name: sgd                                   # Stochastic Gradient Descent optimizer used to update model weights
-    lr: 0.005                                   # Learning rate (step size for updating weights)
+    lr: 0.002                                   # Learning rate (step size for updating weights)
     momentum: 0.9                               # Momentum factor to accelerate gradients in the consistent direction
     weight_decay: 0.0005                        # L2 penalty to prevent overfitting by penalizing large weights
   scheduler:
-    name: step                                  # Learning rate scheduler type (StepLR decreases LR at fixed intervals)
-    step_size: 15                               # Number of epochs before decreasing the learning rate
-    gamma: 0.5                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
+    name: cosine                                # Learning rate scheduler type
+    T_max: 100                                  # Maximum number of iterations for Cosine Annealing
+    eta_min: 0.0001                             # Minimum learning rate                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
 output:
-  runs_dir: runs/parts_maskrcnn_v2
+  runs_dir: runs/parts_maskrcnn_v3
