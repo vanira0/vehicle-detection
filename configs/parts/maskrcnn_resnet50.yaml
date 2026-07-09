@@ -24,7 +24,7 @@ model:
 data:
   root: data/rcnn_kaggle_coco                   # Root directory containing the dataset images and annotations
   annotation_format: coco                       # Format of the bounding box and mask annotations (COCO format)
-  image_size: 512                               # Target image size for training and inference
+  image_size: 800                               # Target image size for training and inference
   class_names: [
     "Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk", 
     "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", 
@@ -40,7 +40,7 @@ training:
     patience: 5
     metric: loss
     mode: min                                   # Early stopping patience: stop training if no improvement after 5 epochs
-  batch_size: 8                                 # Number of images processed in parallel before updating model weights
+  batch_size: 4                                 # Number of images processed in parallel before updating model weights
   optimizer:
     name: sgd                                   # Stochastic Gradient Descent optimizer used to update model weights
     lr: 0.002                                   # Learning rate (step size for updating weights)
