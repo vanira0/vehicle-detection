@@ -61,6 +61,18 @@ class YOLO11SegmentationWrapper(BaseDetector):
         # We can extract optimizer params as well if needed
         lr = getattr(config.training.optimizer, "lr", 0.01)
         
+        # Resolve project root dynamically (3 levels up from src/models/yolo_segmentation.py)
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        
+        # Ensure the project output path is absolute
+        runs_dir = getattr(config.output, "runs_dir", "runs")
+        if not os.path.isabs(runs_dir):
+            runs_dir = os.path.join(project_root, runs_dir)
+            
+        data_yaml = getattr(config.data, "yaml_path", "data.yaml")
+        if not os.path.isabs(data_yaml):
+            data_yaml = os.path.join(project_root, data_yaml)
+
         # Launch YOLO training
         results = self._model.train(
             data=data_yaml,
@@ -68,7 +80,7 @@ class YOLO11SegmentationWrapper(BaseDetector):
             imgsz=img_size,
             batch=batch_size,
             lr0=lr,
-            project=getattr(config.output, "runs_dir", "runs"),
+            project=runs_dir,
             name=getattr(config, "experiment_name", "yolo_experiment"),
             task="segment",
             exist_ok=True
