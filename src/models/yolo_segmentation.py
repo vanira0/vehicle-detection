@@ -55,24 +55,35 @@ class YOLO11SegmentationWrapper(BaseDetector):
         """
         data_yaml = getattr(config.data, "yaml_path", "data.yaml")
         epochs = getattr(config.training, "epochs", 50)
-        batch_size = getattr(config.training, "batch_size", 16)
+        batch_size = getattr(config.training, "batch_size", 4)
         img_size = getattr(config.data, "image_size", 640)
         
         # We can extract optimizer params as well if needed
         lr = getattr(config.training.optimizer, "lr", 0.01)
         
+        # Extract any extra YOLO specific kwargs
+        yolo_kwargs = {}
+        if hasattr(config.training, "yolo_kwargs"):
+            yolo_kwargs = config.training.yolo_kwargs.to_dict()
+            
+        # Build training arguments
+        train_args = {
+            "data": data_yaml,
+            "epochs": epochs,
+            "imgsz": img_size,
+            "batch": batch_size,
+            "lr0": lr,
+            "project": getattr(config.output, "runs_dir", "runs"),
+            "name": getattr(config, "experiment_name", "yolo_experiment"),
+            "task": "segment",
+            "exist_ok": True
+        }
+        
+        # Merge any custom kwargs provided by the user
+        train_args.update(yolo_kwargs)
+        
         # Launch YOLO training
-        results = self._model.train(
-            data=data_yaml,
-            epochs=epochs,
-            imgsz=img_size,
-            batch=batch_size,
-            lr0=lr,
-            project=getattr(config.output, "runs_dir", "runs"),
-            name=getattr(config, "experiment_name", "yolo_experiment"),
-            task="segment",
-            exist_ok=True
-        )
+        results = self._model.train(**train_args)
         return results
 
     def compute_loss(
