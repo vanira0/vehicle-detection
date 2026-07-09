@@ -26,4 +26,4 @@ training:
     mosaic: 1.0                                 # Probability (0 to 1) of combining 4 images into 1 for better context learning
 
 output:
-  runs_dir: runs/parts_yolo11_2
+  runs_dir: /home/ubuntu/vehicle-detection
