@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 import torch.nn as nn
+import os
 
 try:
     from ultralytics import YOLO
@@ -61,6 +62,18 @@ class YOLO11SegmentationWrapper(BaseDetector):
         # We can extract optimizer params as well if needed
         lr = getattr(config.training.optimizer, "lr", 0.01)
         
+        # Resolve project root dynamically (3 levels up from src/models/yolo_segmentation.py)
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        
+        # Ensure the project output path is absolute
+        runs_dir = getattr(config.output, "runs_dir", "runs")
+        if not os.path.isabs(runs_dir):
+            runs_dir = os.path.join(project_root, runs_dir)
+            
+        data_yaml = getattr(config.data, "yaml_path", "data.yaml")
+        if not os.path.isabs(data_yaml):
+            data_yaml = os.path.join(project_root, data_yaml)
+
         # Extract any extra YOLO specific kwargs
         yolo_kwargs = {}
         if hasattr(config.training, "yolo_kwargs"):
@@ -73,7 +86,7 @@ class YOLO11SegmentationWrapper(BaseDetector):
             "imgsz": img_size,
             "batch": batch_size,
             "lr0": lr,
-            "project": getattr(config.output, "runs_dir", "runs"),
+            "project": runs_dir,
             "name": getattr(config, "experiment_name", "yolo_experiment"),
             "task": "segment",
             "exist_ok": True
@@ -81,7 +94,7 @@ class YOLO11SegmentationWrapper(BaseDetector):
         
         # Merge any custom kwargs provided by the user
         train_args.update(yolo_kwargs)
-        
+
         # Launch YOLO training
         results = self._model.train(**train_args)
         return results
