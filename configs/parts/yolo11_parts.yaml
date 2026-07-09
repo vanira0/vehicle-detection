@@ -12,11 +12,21 @@ data:
   image_size: 640
 
 training:
-  epochs: 50
-  patience: 5
-  batch_size: 16
+  epochs: 100                                   # Total number of complete passes through the training dataset
+  early_stopping:
+    enabled: true
+    patience: 5
+    metric: loss
+    mode: min                                   # Early stopping patience: stop training if no improvement after 5 epochs
+  batch_size: 4                                 # Number of images processed in parallel before updating model weights
   optimizer:
-    lr: 0.01
-
+    name: sgd                                   # Stochastic Gradient Descent optimizer used to update model weights
+    lr: 0.002                                   # Learning rate (step size for updating weights)
+    momentum: 0.9                               # Momentum factor to accelerate gradients in the consistent direction
+    weight_decay: 0.0005                        # L2 penalty to prevent overfitting by penalizing large weights
+  scheduler:
+    name: cosine                                # Learning rate scheduler type
+    T_max: 100                                  # Maximum number of iterations for Cosine Annealing
+    eta_min: 0.0001                             # Minimum learning rate                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
 output:
-  runs_dir: runs/parts_yolo11
+  runs_dir: runs/parts_yolo11_1

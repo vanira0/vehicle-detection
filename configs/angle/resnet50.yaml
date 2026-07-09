@@ -19,7 +19,8 @@ model:
   freeze_backbone_epochs: 5        # Freeze backbone for first N epochs
 
 data:
-  annotation_format:         # Folder-based: right/ left/ front/ etc.
+  root: data/rcnn_kaggle_coco
+  annotation_format: coco        # Folder-based: right/ left/ front/ etc.
   image_size: 224
   class_names: [
     "right", "left", "front", "rear", 
@@ -28,7 +29,7 @@ data:
 
 training:
   epochs: 30
-  batch_size: 32
+  batch_size: 8
   optimizer:
     name: adam
     lr: 0.001
