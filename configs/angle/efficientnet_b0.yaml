@@ -1,0 +1,45 @@
+# =============================================================================
+# Angle Detection — EfficientNet-B0 Classifier
+# =============================================================================
+# Stage: Determines the orientation/angle of a vehicle in an image.
+# Multi-class classification: right, left, front, rear, front-right, 
+# front-left, rear-right, rear-left
+# =============================================================================
+
+_base_: ../base.yaml
+experiment_name: angle_efficientnet_b0_v1
+
+model:
+  name: efficientnet_b0_angle_classifier
+  stage: angle
+  num_classes: 8                   # right, left, front, rear, etc.
+  backbone: efficientnet_b0
+  pretrained: true
+  dropout: 0.5
+  freeze_backbone_epochs: 5        # Freeze backbone for first N epochs
+
+data:
+  root: rf_ds_angle-2
+  annotation_format: folder        # Folder-based: right/ left/ front/ etc.
+  image_size: 224
+  class_names: [
+    "front", "front-left", "front-right", "left", 
+    "rear", "rear-left", "rear-right", "right"
+  ]
+
+training:
+  epochs: 30
+  batch_size: 16
+  optimizer:
+    name: adam
+    lr: 0.001
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    T_max: 30
+    eta_min: 0.00001
+  checkpoint:
+    metric: accuracy
+
+output:
+  runs_dir: runs/angle_efficientnet_b0
