@@ -23,8 +23,8 @@ data:
   annotation_format: folder        # Folder-based: right/ left/ front/ etc.
   image_size: 224
   class_names: [
-    "right", "left", "front", "rear", 
-    "front-right", "front-left", "rear-right", "rear-left"
+    "front", "front-left", "front-right", "left", 
+    "rear", "rear-left", "rear-right", "right"
   ]
 
 training:
@@ -47,4 +47,4 @@ training:
     metric: accuracy
 
 output:
-  runs_dir: runs/angle_rcnn_1
+  runs_dir: runs/angle_rcnn_3
