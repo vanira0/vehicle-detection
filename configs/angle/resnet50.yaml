@@ -19,7 +19,7 @@ model:
   freeze_backbone_epochs: 5        # Freeze backbone for first N epochs
 
 data:
-  root: data/rcnn_kaggle_coco
+  root: rf_ds_angle-2
   annotation_format: coco        # Folder-based: right/ left/ front/ etc.
   image_size: 224
   class_names: [
@@ -45,3 +45,6 @@ training:
     mode: min
   checkpoint:
     metric: accuracy
+
+output:
+  runs_dir: runs/angle_rcnn_1

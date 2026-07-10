@@ -10,7 +10,7 @@ def main():
     api_key = os.getenv("ROBOFLOW_API_KEY")
     workspace_name = os.getenv("ROBOFLOW_WORKSPACE") 
     project_name = os.getenv("ROBOFLOW_PROJECT")
-    project_version = os.getenv("ROBOFLOW_PROJECT_VERSION", "1")
+    project_version = os.getenv("ROBOFLOW_PROJECT_VERSION", "2")
     if not api_key:
         print("Error: ROBOFLOW_API_KEY not found in .env file.")
         print("Please add it to your .env file like this:")
