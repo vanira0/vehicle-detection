@@ -87,14 +87,21 @@ def build_data_loaders(config):
         if not os.path.exists(val_root) and os.path.exists(os.path.join(data_cfg.root, "valid")):
             val_root = os.path.join(data_cfg.root, "valid")
 
+        class_names = getattr(data_cfg, "class_names", None)
+        
         train_dataset = ClassificationDataset(
             root=train_root,
             transform=train_transform,
+            class_names=class_names,
         )
         val_dataset = ClassificationDataset(
             root=val_root,
             transform=val_transform,
+            class_names=class_names,
         )
+        
+        if len(train_dataset) == 0:
+            raise RuntimeError(f"Found 0 images in {train_root}. Check if data.root is correct (maybe the dataset downloaded to a different folder like rf_ds_angle-3?) or if the folder structure matches a classification dataset.")
 
         train_loader = DataLoader(
             train_dataset,
