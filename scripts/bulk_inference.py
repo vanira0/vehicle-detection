@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import os
 import sys
 import glob
@@ -92,57 +92,80 @@ def main():
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image_tensor = F.to_tensor(image_rgb).to(device)
             
-            with torch.no_grad():
-                predictions = model([image_tensor])
-                
-            results = model_wrapper.post_process(predictions, confidence_threshold=args.conf_thresh)[0]
+            is_classifier = getattr(config.model, "stage", "") in ["gatekeeper", "angle"]
             
-            boxes = results["boxes"]
-            labels = results["labels"]
-            scores = results["scores"]
-            masks = results.get("masks", None)
-            
-            # Draw results on the image
-            img_classes = []
-            img_scores = []
-            img_boxes = []
-            
-            for i in range(len(boxes)):
-                box = boxes[i].astype(int)
-                label = int(labels[i])
-                score = scores[i]
-                color = [int(c) for c in colors[label]]
+            if is_classifier:
+                results = model_wrapper.predict(model, image_tensor)
+                pred_cls = results["predicted_class"]
+                score = results["confidence"]
                 
-                # Draw box
-                cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 2)
-                
-                # Draw label
                 class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
-                if class_names and label < len(class_names):
-                    label_str = class_names[label]
+                if class_names and pred_cls < len(class_names):
+                    label_str = class_names[pred_cls]
                 else:
-                    label_str = f"Class {label}"
+                    label_str = f"Class {pred_cls}"
                 label_text = f"{label_str} ({score:.2f})"
                 
-                img_classes.append(label_str)
-                img_scores.append(f"{score:.4f}")
-                img_boxes.append(f"[{box[0]}, {box[1]}, {box[2]}, {box[3]}]")
+                img_classes = [label_str]
+                img_scores = [f"{score:.4f}"]
+                img_boxes = ["[]"]
                 
                 cv2.putText(
-                    image_bgr, label_text, (box[0], box[1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+                    image_bgr, label_text, (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
                 )
+            else:
+                with torch.no_grad():
+                    predictions = model([image_tensor])
+                    
+                results = model_wrapper.post_process(predictions, confidence_threshold=args.conf_thresh)[0]
                 
-                # Draw mask if available
-                if masks is not None:
-                    mask = masks[i]
-                    colored_mask = np.zeros_like(image_bgr)
-                    colored_mask[mask > 0] = color
-                    alpha = 0.5
-                    mask_indices = mask > 0
-                    image_bgr[mask_indices] = cv2.addWeighted(
-                        image_bgr, 1.0, colored_mask, alpha, 0
-                    )[mask_indices]
+                boxes = results["boxes"]
+                labels = results["labels"]
+                scores = results["scores"]
+                masks = results.get("masks", None)
+                
+                # Draw results on the image
+                img_classes = []
+                img_scores = []
+                img_boxes = []
+                
+                for i in range(len(boxes)):
+                    box = boxes[i].astype(int)
+                    label = int(labels[i])
+                    score = scores[i]
+                    color = [int(c) for c in colors[label]]
+                    
+                    # Draw box
+                    cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 2)
+                    
+                    # Draw label
+                    class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
+                    if class_names and label < len(class_names):
+                        label_str = class_names[label]
+                    else:
+                        label_str = f"Class {label}"
+                    label_text = f"{label_str} ({score:.2f})"
+                    
+                    img_classes.append(label_str)
+                    img_scores.append(f"{score:.4f}")
+                    img_boxes.append(f"[{box[0]}, {box[1]}, {box[2]}, {box[3]}]")
+                    
+                    cv2.putText(
+                        image_bgr, label_text, (box[0], box[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+                    )
+                    
+                    # Draw mask if available
+                    if masks is not None:
+                        mask = masks[i]
+                        colored_mask = np.zeros_like(image_bgr)
+                        colored_mask[mask > 0] = color
+                        alpha = 0.5
+                        mask_indices = mask > 0
+                        image_bgr[mask_indices] = cv2.addWeighted(
+                            image_bgr, 1.0, colored_mask, alpha, 0
+                        )[mask_indices]
 
             # Save output image
             base_name = os.path.basename(img_path)

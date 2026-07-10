@@ -38,11 +38,11 @@ training:
     name: cosine
     T_max: 30
     eta_min: 0.00001
-  early_stopping:
-    enabled: true
-    patience: 5
-    metric: loss
-    mode: min
+  # early_stopping:
+  #   enabled: true
+  #   patience: 5
+  #   metric: loss
+  #   mode: min
   checkpoint:
     metric: accuracy
 
