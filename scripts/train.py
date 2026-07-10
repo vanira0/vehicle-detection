@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """
 Train a model using a YAML configuration file.
 
@@ -77,17 +77,22 @@ def build_data_loaders(config):
     num_workers = getattr(data_cfg, "num_workers", 4)
     pin_memory = getattr(data_cfg, "pin_memory", True)
 
-    if stage == "gatekeeper":
+    if getattr(data_cfg, "annotation_format", "") == "folder" or stage in ["gatekeeper", "angle"]:
         # Folder-based classification dataset
         train_transform = build_augmentation_pipeline(config, is_train=True)
         val_transform = build_augmentation_pipeline(config, is_train=False)
 
+        train_root = os.path.join(data_cfg.root, "train")
+        val_root = os.path.join(data_cfg.root, "val")
+        if not os.path.exists(val_root) and os.path.exists(os.path.join(data_cfg.root, "valid")):
+            val_root = os.path.join(data_cfg.root, "valid")
+
         train_dataset = ClassificationDataset(
-            root=os.path.join(data_cfg.root, "train"),
+            root=train_root,
             transform=train_transform,
         )
         val_dataset = ClassificationDataset(
-            root=os.path.join(data_cfg.root, "val"),
+            root=val_root,
             transform=val_transform,
         )
 
@@ -223,7 +228,7 @@ def main():
     callbacks = build_callbacks(config)
 
     # Build evaluator
-    model_type = "classification" if config.model.stage == "gatekeeper" else "detection"
+    model_type = "classification" if config.model.stage in ["gatekeeper", "angle"] else "detection"
     evaluator = Evaluator(
         model_type=model_type,
         num_classes=getattr(config.model, "num_classes", 2),

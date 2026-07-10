@@ -20,7 +20,7 @@ model:
 
 data:
   root: rf_ds_angle-2
-  annotation_format: coco        # Folder-based: right/ left/ front/ etc.
+  annotation_format: folder        # Folder-based: right/ left/ front/ etc.
   image_size: 224
   class_names: [
     "right", "left", "front", "rear", 
