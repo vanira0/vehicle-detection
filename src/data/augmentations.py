@@ -223,7 +223,7 @@ def build_augmentation_pipeline(
     stage = config.model.stage
     image_size = getattr(config.data, "image_size", 1024)
 
-    if stage == "gatekeeper":
+    if getattr(config.data, "annotation_format", "") == "folder" or stage in ["gatekeeper", "angle"]:
         return build_classification_augmentation(config, is_train, image_size)
     else:
         return build_segmentation_augmentation(config, is_train, image_size)
