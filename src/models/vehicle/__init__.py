@@ -1,0 +1,1 @@
+from .yolo_vehicle_seg import YOLO11VehicleSegWrapper

@@ -18,6 +18,7 @@ import models.gatekeeper
 import models.angle
 import models.damage
 import models.parts
+import models.vehicle
 
 from .orchestrator import Orchestrator
 
@@ -134,6 +135,20 @@ class ConfigurablePipeline:
                     "labels": res["labels"].tolist() if hasattr(res["labels"], "tolist") else res["labels"],
                     "scores": res["scores"].tolist() if hasattr(res["scores"], "tolist") else res["scores"],
                 }
+                
+                if name == "vehicle" and hasattr(wrapper, "select_target_vehicle"):
+                    target_idx = wrapper.select_target_vehicle(res, image_rgb.shape)
+                    if target_idx is not None:
+                        # Apply crop+mask to isolate the vehicle for downstream models
+                        image_rgb = wrapper.extract_vehicle_roi(image_rgb, res, target_idx)
+                        
+                        # Recompute standardized images for downstream models
+                        class_image = preprocess_image(image_rgb, target_size=224).to(self.device)
+                        det_image = preprocess_for_detection(image_rgb, target_size=1024).to(self.device)
+                    else:
+                        # If no vehicle found, we might want to stop or continue with original
+                        result["status"] = "no_vehicle_found"
+                        break
 
         # Post-processors execution
         if self.orchestrator and "damage" in context and "parts" in context:

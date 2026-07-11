@@ -5,6 +5,8 @@ iou_threshold: 0.4
 
 # List of models to execute in order
 models:
+  - name: "vehicle"
+    checkpoint: "runs/yolo11_vehicle_seg_v1/weights/best.pt"
   - name: "angle"
     checkpoint: "runs/angle_resnet50_v3/checkpoints/best.pth"  # Update with actual path
   - name: "parts"

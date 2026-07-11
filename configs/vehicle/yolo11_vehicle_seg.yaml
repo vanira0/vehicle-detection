@@ -1,0 +1,22 @@
+_base_: ../base.yaml
+experiment_name: yolo11_vehicle_seg_v1
+
+model:
+  name: yolo11_vehicle_seg
+  stage: vehicle
+  weights: yolo11n-seg.pt
+
+data:
+  yaml_path: data/vehicle_seg/data.yaml
+  image_size: 640
+
+training:
+  epochs: 50
+  batch_size: 16
+  optimizer:
+    lr: 0.01
+  yolo_kwargs:
+    optimizer: SGD
+    patience: 10
+    cos_lr: true
+    mosaic: 1.0
