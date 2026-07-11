@@ -1,16 +1,16 @@
 name: "test_all_models"
-device: "cuda"
-confidence_threshold: 0.5
-iou_threshold: 0.3
+device: "cpu"
+confidence_threshold: 0.6
+iou_threshold: 0.4
 
 # List of models to execute in order
 models:
   - name: "angle"
-    checkpoint: "runs/angle_resnet50_v1/checkpoints/best.pth"  # Update with actual path
+    checkpoint: "runs/angle_resnet50_v3/checkpoints/best.pth"  # Update with actual path
   - name: "parts"
-    checkpoint: "runs/parts_yolo11n_seg_v1/checkpoints/best.pth" # Update with actual path
-  - name: "damage"
-    checkpoint: "runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth" # Update with actual path
+    checkpoint: "runs/parts_maskrcnn_resnet50_v1_2/checkpoints/best.pth" # Update with actual path
+  # - name: "damage"
+  #   checkpoint: "runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth" # Update with actual path
 
 # Post-processing modules to run after all models
 post_processors:

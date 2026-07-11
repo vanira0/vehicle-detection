@@ -79,6 +79,7 @@ class Orchestrator:
         damage_masks = damage_predictions.get("masks", np.array([]))
         damage_labels = damage_predictions.get("labels", np.array([]))
         damage_scores = damage_predictions.get("scores", np.array([]))
+        damage_boxes = damage_predictions.get("boxes", np.array([]))
 
         part_masks = part_predictions.get("masks", np.array([]))
         part_labels = part_predictions.get("labels", np.array([]))
@@ -111,6 +112,7 @@ class Orchestrator:
 
                     best_iou = iou
                     best_match = {
+                        "damage_index": i,
                         "damage_type": self._get_class_name(d_label, self.damage_classes),
                         "car_part": self._get_class_name(p_label, self.part_classes),
                         "severity": severity,
@@ -120,6 +122,8 @@ class Orchestrator:
                         "damage_area_px": int(d_area),
                         "area_ratio": round(float(area_ratio), 3),
                     }
+                    if len(damage_boxes) > i:
+                        best_match["damage_box"] = damage_boxes[i]
 
             if best_match:
                 # Build human-readable description

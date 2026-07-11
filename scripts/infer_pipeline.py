@@ -29,6 +29,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from inference.configurable_pipeline import ConfigurablePipeline
 from utils.logger import setup_logger
+from data.preprocessing import resize_image
+from utils.visualization import draw_bboxes
+import cv2
 
 
 def parse_args():
@@ -51,7 +54,7 @@ def init_csv_files(models, output_dir: str):
             pass
 
 
-def append_to_csv(model_name: str, image_name: str, context_data: dict, output_dir: str):
+def append_to_csv(model_name: str, image_name: str, context_data: dict, output_dir: str, class_names: list = None):
     """Append model predictions to CSV for a single image."""
     csv_path = os.path.join(output_dir, f"{model_name}_predictions.csv")
     
@@ -64,12 +67,21 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
             writer = csv.writer(f)
             if is_empty:
                 if "predicted_class" in context_data:
-                    writer.writerow(["image_name", "predicted_class", "confidence"])
+                    writer.writerow(["image_name", "predicted_class", "class_name", "confidence"])
                 elif "is_damaged" in context_data:
                     writer.writerow(["image_name", "is_damaged", "confidence"])
             
             if "predicted_class" in context_data:
-                writer.writerow([image_name, context_data["predicted_class"], context_data.get("confidence", 0.0)])
+                pred_class = context_data["predicted_class"]
+                class_name = ""
+                if class_names is not None:
+                    try:
+                        idx = int(pred_class)
+                        if 0 <= idx < len(class_names):
+                            class_name = class_names[idx]
+                    except (ValueError, TypeError):
+                        pass
+                writer.writerow([image_name, pred_class, class_name, context_data.get("confidence", 0.0)])
             elif "is_damaged" in context_data:
                 writer.writerow([image_name, context_data["is_damaged"], context_data.get("confidence", 0.0)])
         return
@@ -79,7 +91,7 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
         with open(csv_path, "a", newline="") as f:
             writer = csv.writer(f)
             if is_empty:
-                writer.writerow(["image_name", "class_id", "score", "box_x1", "box_y1", "box_x2", "box_y2"])
+                writer.writerow(["image_name", "class_id", "class_name", "score", "box_x1", "box_y1", "box_x2", "box_y2"])
             
             boxes = context_data["boxes"]
             labels = context_data["labels"]
@@ -88,8 +100,11 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
             for i in range(len(labels)):
                 box = boxes[i]
                 label = int(labels[i])
+                class_name = ""
+                if class_names is not None and 0 <= label < len(class_names):
+                    class_name = class_names[label]
                 score = float(scores[i]) if i < len(scores) else 1.0
-                writer.writerow([image_name, label, score, box[0], box[1], box[2], box[3]])
+                writer.writerow([image_name, label, class_name, score, box[0], box[1], box[2], box[3]])
         return
 
 
@@ -153,13 +168,67 @@ def main():
                 total_time += result.get("inference_time_ms", 0)
                 
                 # Export to CSVs
-                for model_cfg in pipeline.config.get("models", []):
-                    name = model_cfg["name"]
+                for m in pipeline.models:
+                    name = m["name"]
                     if name in context:
-                        append_to_csv(name, image_name, context[name], args.output_dir)
+                        class_names = m.get("config", {}).get("data.class_names")
+                        append_to_csv(name, image_name, context[name], args.output_dir, class_names)
                 
                 # Write to JSONL
                 jsonl_file.write(json.dumps(result, default=default_serializer) + "\n")
+                
+                # Visualize parts boxes and angle
+                if "image_rgb" in context:
+                    img_bgr = cv2.cvtColor(context["image_rgb"], cv2.COLOR_RGB2BGR)
+                    # Resize to match detection model input size (1024)
+                    img_bgr = resize_image(img_bgr, target_size=1024, keep_aspect_ratio=True)
+                    
+                    # Draw angle
+                    if "angle" in result and "predicted_class" in result["angle"]:
+                        pred_class = result['angle']['predicted_class']
+                        angle_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "angle":
+                                angle_classes = m.get("config", {}).get("data.class_names")
+                                break
+                        
+                        class_name = str(pred_class)
+                        if angle_classes is not None:
+                            try:
+                                pred_class_idx = int(pred_class)
+                                if 0 <= pred_class_idx < len(angle_classes):
+                                    class_name = angle_classes[pred_class_idx]
+                            except (ValueError, TypeError):
+                                pass
+                                
+                        angle_text = f"Angle: {class_name}"
+                        cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+
+                    # Draw parts boxes
+                    if "parts" in context:
+                        parts_context = context["parts"]
+                        boxes = parts_context.get("boxes")
+                        labels = parts_context.get("labels")
+                        scores = parts_context.get("scores")
+                        
+                        part_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "parts":
+                                part_classes = m.get("config", {}).get("data.class_names")
+                                break
+                                
+                        if boxes is not None and len(boxes) > 0:
+                            part_label_names = []
+                            for l in labels:
+                                name = str(l)
+                                if part_classes is not None and 0 <= int(l) < len(part_classes):
+                                    name = part_classes[int(l)]
+                                part_label_names.append(name)
+                                
+                            img_bgr = draw_bboxes(img_bgr, boxes, part_label_names, scores, score_threshold=pipeline.confidence_threshold)
+                            
+                    annotated_path = os.path.join(args.output_dir, f"annotated_{image_name}")
+                    cv2.imwrite(annotated_path, img_bgr)
                 
             except Exception as e:
                 logger.error(f"Error processing {image_name}: {str(e)}")
