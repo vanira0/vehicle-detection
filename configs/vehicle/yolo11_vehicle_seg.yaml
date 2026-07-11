@@ -7,7 +7,7 @@ model:
   weights: yolo11n-seg.pt
 
 data:
-  yaml_path: data/vehicle_seg/data.yaml
+  yaml_path: rf_ds_vehicle_seg-1/data.yaml
   image_size: 640
 
 training:
