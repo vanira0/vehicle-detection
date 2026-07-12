@@ -9,14 +9,15 @@ model:
   weights: yolo11s-seg.pt
 
 data:
-  yaml_path: data/kaggle/data.yaml
-  image_size: 640
+  yaml_path: data/car_DD_damage_yolo/data.yaml
+  image_size: 1024
+  class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
 
 training:
   epochs: 50
-  batch_size: 16
+  batch_size: 8
   optimizer:
-    lr: 0.01
+    lr: 0.005
 
 output:
   runs_dir: runs/damage_yolo11

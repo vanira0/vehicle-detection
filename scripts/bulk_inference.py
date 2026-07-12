@@ -41,13 +41,20 @@ def load_model(config_path, checkpoint_path, device):
     model_name = config.model.name
     model_wrapper = get_model(model_name)()
     
-    # Build model using config
-    model = model_wrapper.build(config.model).to(device)
-    
-    # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
+    if "yolo" in model_name.lower():
+        from ultralytics import YOLO
+        yolo_model = YOLO(checkpoint_path)
+        model_wrapper._yolo_model = yolo_model
+        model = yolo_model.model.to(device)
+        model.eval()
+    else:
+        # Build model using config
+        model = model_wrapper.build(config.model).to(device)
+        
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.eval()
     
     return model, model_wrapper, config
 
@@ -115,8 +122,12 @@ def main():
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
                 )
             else:
-                with torch.no_grad():
-                    predictions = model([image_tensor])
+                if "yolo" in config.model.name.lower():
+                    # For YOLO models, use Ultralytics API for inference
+                    predictions = model_wrapper._yolo_model.predict(image_bgr, verbose=False, conf=args.conf_thresh)
+                else:
+                    with torch.no_grad():
+                        predictions = model([image_tensor])
                     
                 results = model_wrapper.post_process(predictions, confidence_threshold=args.conf_thresh)[0]
                 

@@ -19,6 +19,7 @@ from models.registry import register_model
 from utils.config import Config
 
 
+# @register_model("yolo11_seg")
 @register_model("yolov8_seg")
 class YOLOv8SegDamage(BaseDetector):
     """
@@ -114,9 +115,15 @@ class YOLOv8SegDamage(BaseDetector):
                 labels = labels[keep]
 
                 # Extract masks if available
-                masks = np.array([])
+                masks = []
                 if hasattr(pred, "masks") and pred.masks is not None:
-                    masks = pred.masks.data[keep].cpu().numpy()
+                    orig_h, orig_w = pred.orig_shape
+                    raw_masks = pred.masks.data[keep].cpu().numpy()
+                    import cv2
+                    for m in raw_masks:
+                        m_resized = cv2.resize(m, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+                        masks.append(m_resized > 0.5)
+                masks = np.array(masks) if len(masks) > 0 else np.array([])
 
                 results.append({
                     "boxes": boxes,
