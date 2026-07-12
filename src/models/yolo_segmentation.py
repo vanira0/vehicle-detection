@@ -22,6 +22,7 @@ from .registry import register_model
 
 
 @register_model("yolo11_seg")
+@register_model("yolo26_seg")
 class YOLO11SegmentationWrapper(BaseDetector):
     """
     Wrapper for YOLO11 Segmentation models.
