@@ -34,6 +34,21 @@ from utils.visualization import draw_bboxes
 import cv2
 
 
+def apply_clahe(image):
+    # Convert BGR to LAB color space
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to the L-channel
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l)
+    
+    # Merge channels back and convert to BGR
+    limg = cv2.merge((cl, a, b))
+    enhanced_image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    return enhanced_image
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run configurable vehicle damage detection pipeline")
     parser.add_argument("--pipeline-config", type=str, required=True, help="Path to pipeline YAML config")
@@ -159,7 +174,18 @@ def main():
             logger.info(f"[{idx}/{len(image_paths)}] Processing: {image_name}")
             
             try:
-                result = pipeline(image_path)
+                # Apply CLAHE
+                img = cv2.imread(image_path)
+                if img is not None:
+                    clahe_img = apply_clahe(img)
+                    tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
+                    cv2.imwrite(tmp_path, clahe_img)
+                    pipeline_input = tmp_path
+                else:
+                    pipeline_input = image_path
+                    
+                result = pipeline(pipeline_input)
+                result["image_path"] = image_path  # restore original path
                 
                 # Extract context for CSV export
                 context = result.pop("_context", {})

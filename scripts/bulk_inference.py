@@ -24,6 +24,21 @@ import models.parts       # noqa: F401
 import models.vehicle     # noqa: F401
 
 
+def apply_clahe(image):
+    # Convert BGR to LAB color space
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to the L-channel
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l)
+    
+    # Merge channels back and convert to BGR
+    limg = cv2.merge((cl, a, b))
+    enhanced_image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    return enhanced_image
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Test a trained individual model on a directory of images")
     parser.add_argument("--config", type=str, required=True, help="Path to model config (e.g., configs/damage/maskrcnn_resnet50.yaml)")
@@ -110,6 +125,8 @@ def main():
             if image is None:
                 logger.error(f"Could not load image at {img_path}")
                 continue
+                
+            image = apply_clahe(image)
                 
             image_bgr = image.copy()
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
