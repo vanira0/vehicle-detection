@@ -8,15 +8,18 @@ models:
   - name: "vehicle"
     model_name: "yolo11_vehicle_seg"
     checkpoint: "runs/vehicle_seg_y11/best.pt"
-    confidence_threshold: 0.05
+    confidence_threshold: 0.079
   # - name: "angle"
   #   checkpoint: "runs/angle_resnet50_v3/checkpoints/best.pth"  # Update with actual path
   - name: "parts"
-    checkpoint: "runs/parts_maskrcnn_resnet50_v1_2/checkpoints/best.pth" # Update with actual path
-  - name: "damage"
     model_name: "yolo11_seg"
-    checkpoint: "runs/cardd_yolov11/best.pt" # Update with actual path
+    checkpoint: "runs/yolo11_t2/best.pt" # Update with actual path
     confidence_threshold: 0.5
+
+  - name: "damage"
+    model_name: "yolo26_seg"
+    checkpoint: "runs/cardd_yolov26/best.pt" # Update with actual path
+    confidence_threshold: 0.4
 
 # Post-processing modules to run after all models
 post_processors:

@@ -9,6 +9,7 @@ model:
 data:
   yaml_path: data/y11_kaggle_yolo/parts/dataset.yaml
   image_size: 1024
+  class_names: ["Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk", "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", "Mirror", "Roof"]
 
 training:
   epochs: 100                                   # Total number of training rounds over the entire dataset

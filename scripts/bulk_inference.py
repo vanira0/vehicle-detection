@@ -80,7 +80,7 @@ def apply_clahe(image):
     l, a, b = cv2.split(lab)
     
     # Apply CLAHE to the L-channel
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(8, 8))
     cl = clahe.apply(l)
     
     # Merge channels back and convert to BGR
@@ -172,7 +172,7 @@ def main():
         logger.info(f"Processing: {img_path}")
         try:
             try:
-                image, quality, size_kb = pipeline_preprocess(img_path, target_size=512, max_size_kb=400)
+                image, quality, size_kb = pipeline_preprocess(img_path, target_size=1024, max_size_kb=1024)
                 logger.info(f"Compressed image to {size_kb:.2f}KB with quality {quality}")
             except Exception as e:
                 logger.error(f"Preprocessing failed for {img_path}: {e}")
@@ -270,7 +270,7 @@ def main():
                     
                     cv2.putText(
                         image_bgr, label_text, (box[0], box[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 3, color, 8
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3
                     )
                     
                     # Draw mask if available

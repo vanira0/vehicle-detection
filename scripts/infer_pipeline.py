@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import glob
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -226,19 +227,21 @@ def main():
             try:
                 # Preprocess and Apply CLAHE
                 try:
-                    img, quality, size_kb = pipeline_preprocess(image_path, target_size=512, max_size_kb=400)
+                    img, quality, size_kb = pipeline_preprocess(image_path, target_size=1024, max_size_kb=1024)
                     logger.info(f"Compressed image to {size_kb:.2f}KB with quality {quality}")
                 except Exception as e:
                     logger.error(f"Preprocessing failed for {image_name}: {e}")
                     img = None
 
-                if img is not None:
-                    clahe_img = apply_clahe(img)
-                    tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
-                    cv2.imwrite(tmp_path, clahe_img)
-                    pipeline_input = tmp_path
-                else:
-                    pipeline_input = image_path
+                # if img is not None:
+                #     clahe_img = apply_clahe(img)
+                #     tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
+                #     cv2.imwrite(tmp_path, clahe_img)
+                #     pipeline_input = tmp_path
+                # else:
+                #     pipeline_input = image_path
+                
+                pipeline_input = image_path
                     
                 result = pipeline(pipeline_input)
                 result["image_path"] = image_path  # restore original path
@@ -262,8 +265,6 @@ def main():
                 # Visualize parts boxes and angle
                 if "image_rgb" in context:
                     img_bgr = cv2.cvtColor(context["image_rgb"], cv2.COLOR_RGB2BGR)
-                    # Resize to match detection model input size (1024)
-                    img_bgr = resize_image(img_bgr, target_size=1024, keep_aspect_ratio=True)
                     
                     # Draw angle
                     if "angle" in result and "predicted_class" in result["angle"]:
@@ -286,7 +287,14 @@ def main():
                         angle_text = f"Angle: {class_name}"
                         cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-                    # Draw parts boxes
+                    # Extract damaged part indices from orchestrator findings
+                    damaged_part_indices = set()
+                    findings = result.get("findings", [])
+                    for finding in findings:
+                        if "part_index" in finding:
+                            damaged_part_indices.add(finding["part_index"])
+
+                    # Draw parts boxes (only for damaged parts)
                     if "parts" in context:
                         parts_context = context["parts"]
                         boxes = parts_context.get("boxes")
@@ -296,18 +304,67 @@ def main():
                         part_classes = None
                         for m in pipeline.models:
                             if m["name"] == "parts":
-                                part_classes = m.get("config", {}).get("data.class_names")
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    part_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    part_classes = m.get("config", {}).get("data.class_names")
                                 break
                                 
                         if boxes is not None and len(boxes) > 0:
-                            part_label_names = []
+                            filtered_boxes = []
+                            filtered_labels = []
+                            filtered_scores = []
+                            
+                            for i in range(len(boxes)):
+                                if i in damaged_part_indices:
+                                    filtered_boxes.append(boxes[i])
+                                    
+                                    name = str(labels[i])
+                                    if part_classes is not None:
+                                        if isinstance(part_classes, dict) and int(labels[i]) in part_classes:
+                                            name = part_classes[int(labels[i])]
+                                        elif isinstance(part_classes, list) and 0 <= int(labels[i]) < len(part_classes):
+                                            name = part_classes[int(labels[i])]
+                                    filtered_labels.append(name)
+                                    
+                                    if scores is not None and i < len(scores):
+                                        filtered_scores.append(scores[i])
+                                        
+                            if len(filtered_boxes) > 0:
+                                img_bgr = draw_bboxes(img_bgr, np.array(filtered_boxes), filtered_labels, np.array(filtered_scores) if filtered_scores else None, score_threshold=pipeline.confidence_threshold, label_position="inside_bottom_left")
+                                
+                    # Draw damage boxes
+                    if "damage" in context:
+                        damage_context = context["damage"]
+                        boxes = damage_context.get("boxes")
+                        labels = damage_context.get("labels")
+                        scores = damage_context.get("scores")
+                        
+                        damage_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "damage":
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    damage_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    damage_classes = m.get("config", {}).get("data.class_names")
+                                break
+                                
+                        if boxes is not None and len(boxes) > 0:
+                            damage_labels_str = []
                             for l in labels:
                                 name = str(l)
-                                if part_classes is not None and 0 <= int(l) < len(part_classes):
-                                    name = part_classes[int(l)]
-                                part_label_names.append(name)
+                                if damage_classes is not None:
+                                    if isinstance(damage_classes, dict) and int(l) in damage_classes:
+                                        name = f"Damage: {damage_classes[int(l)]}"
+                                    elif isinstance(damage_classes, list) and 0 <= int(l) < len(damage_classes):
+                                        name = f"Damage: {damage_classes[int(l)]}"
+                                    else:
+                                        name = f"Damage: {name}"
+                                else:
+                                    name = f"Damage: {name}"
+                                damage_labels_str.append(name)
                                 
-                            img_bgr = draw_bboxes(img_bgr, boxes, part_label_names, scores, score_threshold=pipeline.confidence_threshold)
+                            img_bgr = draw_bboxes(img_bgr, np.array(boxes), damage_labels_str, scores, score_threshold=pipeline.confidence_threshold)
                             
                     annotated_path = os.path.join(args.output_dir, f"annotated_{image_name}")
                     cv2.imwrite(annotated_path, img_bgr)

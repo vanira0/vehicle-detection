@@ -10,6 +10,7 @@ model:
 data:
   yaml_path: data/kaggle/data.yaml
   image_size: 640
+  class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
 
 training:
   epochs: 50

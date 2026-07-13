@@ -173,6 +173,9 @@ class ConfigurablePipeline:
                         # Apply crop+mask to isolate the vehicle for downstream models
                         image_rgb = wrapper.extract_vehicle_roi(image_rgb, res, target_idx)
                         
+                        # Update context to the cropped image so that visualization uses it
+                        context["image_rgb"] = image_rgb
+                        
                         # Recompute standardized images for downstream models
                         class_image = preprocess_image(image_rgb, target_size=224).to(self.device)
                         det_image = preprocess_for_detection(image_rgb, target_size=1024).to(self.device)

@@ -38,15 +38,14 @@ class Orchestrator:
     ):
         self.iou_threshold = iou_threshold
         self.damage_classes = damage_classes or [
-            "background", "scratch", "dent", "crack",
-            "broken_part", "shattered_glass", "tear",
+            "dent", "scratch", "crack", "glass shatter", "lamp broken", "tire flat"
         ]
         self.part_classes = part_classes or [
-            "background", "hood", "front_bumper", "rear_bumper",
-            "left_fender", "right_fender", "left_front_door",
-            "right_front_door", "left_rear_door", "right_rear_door",
-            "trunk", "roof", "windshield", "rear_window",
-            "headlight", "taillight",
+            "Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk",
+            "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window",
+            "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", 
+            "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper",
+            "Mirror", "Roof"
         ]
 
     def map_damage_to_parts(
@@ -113,6 +112,7 @@ class Orchestrator:
                     best_iou = iou
                     best_match = {
                         "damage_index": i,
+                        "part_index": j,
                         "damage_type": self._get_class_name(d_label, self.damage_classes),
                         "car_part": self._get_class_name(p_label, self.part_classes),
                         "severity": severity,

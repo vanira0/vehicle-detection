@@ -98,6 +98,8 @@ def draw_bboxes(
     scores: Optional[np.ndarray] = None,
     score_threshold: float = 0.5,
     thickness: int = 2,
+    label_position: str = "top",
+    font_scale: float = 0.8,
 ) -> np.ndarray:
     """
     Draw bounding boxes on an image.
@@ -129,14 +131,32 @@ def draw_bboxes(
                 label_text += f" {scores[i]:.2f}"
             # Background rectangle for text
             (text_w, text_h), _ = cv2.getTextSize(
-                label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+                label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
             )
+            
+            if label_position == "left":
+                text_x = max(0, x1 - text_w - 8)
+                text_y_bg = y1
+                text_y = y1 + text_h + 3
+            elif label_position == "inside_right":
+                text_x = max(x1 + 2, x2 - text_w - 4)
+                text_y_bg = y1 + 2
+                text_y = y1 + text_h + 5
+            elif label_position == "inside_bottom_left":
+                text_x = x1 + 2
+                text_y_bg = max(y1, y2 - text_h - 10)
+                text_y = max(y1 + text_h, y2 - 6)
+            else:
+                text_x = x1
+                text_y_bg = y1 - text_h - 8
+                text_y = y1 - 5
+
             cv2.rectangle(
-                result, (x1, y1 - text_h - 8), (x1 + text_w, y1), color, -1
+                result, (int(text_x), int(text_y_bg)), (int(text_x + text_w + 8), int(text_y_bg + text_h + 8)), color, -1
             )
             cv2.putText(
-                result, label_text, (x1, y1 - 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA
+                result, label_text, (int(text_x + 4), int(text_y)),
+                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1, cv2.LINE_AA
             )
 
     return result
