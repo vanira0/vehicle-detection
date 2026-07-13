@@ -24,6 +24,56 @@ import models.parts       # noqa: F401
 import models.vehicle     # noqa: F401
 
 
+def resize_with_aspect_ratio_and_pad(image, target_size=512):
+    h, w = image.shape[:2]
+    
+    # Calculate the scaling factor to fit within the target square
+    scaling_factor = target_size / max(h, w)
+    new_w = int(w * scaling_factor)
+    new_h = int(h * scaling_factor)
+    
+    # Resize the image using INTER_AREA (best for shrinking)
+    resized_img = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    
+    # Create a solid black canvas of the target size
+    padded_img = np.zeros((target_size, target_size, 3), dtype=np.uint8)
+    
+    # Calculate top-left offsets to center the image on the canvas
+    x_offset = (target_size - new_w) // 2
+    y_offset = (target_size - new_h) // 2
+    
+    # Paste the resized image onto the center of the canvas
+    padded_img[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_img
+    
+    return padded_img
+
+
+def pipeline_preprocess(image_path, target_size=512, max_size_kb=400):
+    # 1. Load the original high-res image
+    img = cv2.imread(image_path)
+    if img is None:
+        raise FileNotFoundError("Image could not be loaded.")
+        
+    # 2. Resize and pad maintaining aspect ratio
+    processed_img = resize_with_aspect_ratio_and_pad(img, target_size=target_size)
+    
+    # 3. Dynamically compress to target file size (< 400KB)
+    quality = 95
+    while quality > 10:
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        result, encimg = cv2.imencode('.jpg', processed_img, encode_param)
+        
+        size_kb = len(encimg) / 1024
+        if size_kb <= max_size_kb:
+            # Decode back to matrix to feed into your inference pipeline
+            final_img = cv2.imdecode(encimg, cv2.IMREAD_COLOR)
+            return final_img, quality, size_kb
+            
+        quality -= 5
+        
+    raise ValueError("Could not compress below target size even at lowest JPEG quality.")
+
+
 def apply_clahe(image):
     # Convert BGR to LAB color space
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
@@ -121,9 +171,11 @@ def main():
     for img_path in image_paths:
         logger.info(f"Processing: {img_path}")
         try:
-            image = cv2.imread(img_path)
-            if image is None:
-                logger.error(f"Could not load image at {img_path}")
+            try:
+                image, quality, size_kb = pipeline_preprocess(img_path, target_size=512, max_size_kb=400)
+                logger.info(f"Compressed image to {size_kb:.2f}KB with quality {quality}")
+            except Exception as e:
+                logger.error(f"Preprocessing failed for {img_path}: {e}")
                 continue
                 
             image = apply_clahe(image)
