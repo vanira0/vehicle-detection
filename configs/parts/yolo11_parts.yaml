@@ -8,7 +8,7 @@ model:
 
 data:
   yaml_path: data/y11_kaggle_yolo/parts/dataset.yaml
-  image_size: 640
+  image_size: 1024
 
 training:
   epochs: 100                                   # Total number of training rounds over the entire dataset

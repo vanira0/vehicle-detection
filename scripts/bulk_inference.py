@@ -21,6 +21,7 @@ import models.gatekeeper
 import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
+import models.vehicle     # noqa: F401
 
 
 def parse_args():
@@ -41,9 +42,24 @@ def load_model(config_path, checkpoint_path, device):
     model_name = config.model.name
     model_wrapper = get_model(model_name)()
     
+    # Try to load class names from yaml_path if provided
+    yaml_path = getattr(config.data, "yaml_path", None) if hasattr(config, "data") else None
+    loaded_names = None
+    if yaml_path and os.path.exists(yaml_path):
+        import yaml
+        with open(yaml_path, 'r') as f:
+            data_yaml = yaml.safe_load(f)
+            if "names" in data_yaml:
+                if isinstance(data_yaml["names"], list):
+                    loaded_names = {i: name for i, name in enumerate(data_yaml["names"])}
+                elif isinstance(data_yaml["names"], dict):
+                    loaded_names = data_yaml["names"]
+    
     if "yolo" in model_name.lower():
         from ultralytics import YOLO
         yolo_model = YOLO(checkpoint_path)
+        if loaded_names is not None:
+            yolo_model.model.names = loaded_names
         model_wrapper._yolo_model = yolo_model
         model = yolo_model.model.to(device)
         model.eval()
@@ -106,11 +122,14 @@ def main():
                 pred_cls = results["predicted_class"]
                 score = results["confidence"]
                 
-                class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
-                if class_names and pred_cls < len(class_names):
-                    label_str = class_names[pred_cls]
+                if hasattr(model_wrapper, "_yolo_model") and model_wrapper._yolo_model is not None:
+                    label_str = model_wrapper._yolo_model.names.get(int(pred_cls), f"Class {pred_cls}")
                 else:
-                    label_str = f"Class {pred_cls}"
+                    class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
+                    if class_names and pred_cls < len(class_names):
+                        label_str = class_names[pred_cls]
+                    else:
+                        label_str = f"Class {pred_cls}"
                 label_text = f"{label_str} ({score:.2f})"
                 
                 img_classes = [label_str]
@@ -131,6 +150,21 @@ def main():
                     
                 results = model_wrapper.post_process(predictions, confidence_threshold=args.conf_thresh)[0]
                 
+                if hasattr(model_wrapper, "select_target_vehicle"):
+                    target_idx = model_wrapper.select_target_vehicle(results, image_bgr.shape)
+                    if target_idx is not None:
+                        results["boxes"] = np.array([results["boxes"][target_idx]])
+                        results["labels"] = np.array([results["labels"][target_idx]])
+                        results["scores"] = np.array([results["scores"][target_idx]])
+                        if "masks" in results and results["masks"] is not None:
+                            results["masks"] = np.array([results["masks"][target_idx]])
+                    else:
+                        results["boxes"] = np.zeros((0, 4))
+                        results["labels"] = np.zeros((0,))
+                        results["scores"] = np.zeros((0,))
+                        if "masks" in results and results["masks"] is not None:
+                            results["masks"] = np.zeros((0, image_bgr.shape[0], image_bgr.shape[1]))
+
                 boxes = results["boxes"]
                 labels = results["labels"]
                 scores = results["scores"]
@@ -148,14 +182,17 @@ def main():
                     color = [int(c) for c in colors[label]]
                     
                     # Draw box
-                    cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 2)
+                    cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 3)
                     
                     # Draw label
-                    class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
-                    if class_names and label < len(class_names):
-                        label_str = class_names[label]
+                    if hasattr(model_wrapper, "_yolo_model") and model_wrapper._yolo_model is not None:
+                        label_str = model_wrapper._yolo_model.names.get(label, f"Class {label}")
                     else:
-                        label_str = f"Class {label}"
+                        class_names = config.data.get("class_names", []) if hasattr(config, "data") else []
+                        if class_names and label < len(class_names):
+                            label_str = class_names[label]
+                        else:
+                            label_str = f"Class {label}"
                     label_text = f"{label_str} ({score:.2f})"
                     
                     img_classes.append(label_str)
@@ -164,19 +201,19 @@ def main():
                     
                     cv2.putText(
                         image_bgr, label_text, (box[0], box[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+                        cv2.FONT_HERSHEY_SIMPLEX, 3, color, 8
                     )
                     
                     # Draw mask if available
-                    if masks is not None:
-                        mask = masks[i]
-                        colored_mask = np.zeros_like(image_bgr)
-                        colored_mask[mask > 0] = color
-                        alpha = 0.5
-                        mask_indices = mask > 0
-                        image_bgr[mask_indices] = cv2.addWeighted(
-                            image_bgr, 1.0, colored_mask, alpha, 0
-                        )[mask_indices]
+                    # if masks is not None:
+                    #     mask = masks[i]
+                    #     colored_mask = np.zeros_like(image_bgr)
+                    #     colored_mask[mask > 0] = color
+                    #     alpha = 0.5
+                    #     mask_indices = mask > 0
+                    #     image_bgr[mask_indices] = cv2.addWeighted(
+                    #         image_bgr, 1.0, colored_mask, alpha, 0
+                    #     )[mask_indices]
 
             # Save output image
             base_name = os.path.basename(img_path)

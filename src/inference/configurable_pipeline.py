@@ -37,14 +37,17 @@ class ConfigurablePipeline:
         for model_cfg in self.config.get("models", []):
             name = model_cfg["name"]
             checkpoint_path = model_cfg["checkpoint"]
+            model_name = model_cfg.get("model_name")
+            conf_thresh = model_cfg.get("confidence_threshold")
             
             try:
-                model, wrapper, m_config = self._load_model(checkpoint_path, name)
+                model, wrapper, m_config = self._load_model(checkpoint_path, name, model_name)
                 self.models.append({
                     "name": name,
                     "model": model,
                     "wrapper": wrapper,
-                    "config": m_config
+                    "config": m_config,
+                    "confidence_threshold": conf_thresh
                 })
             except FileNotFoundError:
                 self.logger.warning(f"Checkpoint not found for model {name} at {checkpoint_path}. Skipping.")
@@ -73,11 +76,29 @@ class ConfigurablePipeline:
 
         self.logger.info(f"ConfigurablePipeline ready with {len(self.models)} models on {self.device}.")
 
-    def _load_model(self, checkpoint_path: str, name: str):
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+    def _load_model(self, checkpoint_path: str, name: str, provided_model_name: Optional[str] = None):
+        is_yolo = False
+        if provided_model_name and "yolo" in provided_model_name.lower():
+            is_yolo = True
+        elif checkpoint_path.endswith('.pt') and not checkpoint_path.endswith('.pth'):
+            is_yolo = True
+            
+        if is_yolo:
+            from ultralytics import YOLO
+            model_name = provided_model_name if provided_model_name else "yolo11_seg"
+            model_wrapper = get_model(model_name)()
+            yolo_model = YOLO(checkpoint_path)
+            model_wrapper._yolo_model = yolo_model
+            model = yolo_model.model.to(self.device)
+            model.eval()
+            self.logger.info(f"Loaded {name} YOLO model: {model_name}")
+            m_config = Config.from_dict({"model": {"name": model_name}})
+            return model, model_wrapper, m_config
+            
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         config = Config.from_dict(checkpoint["config"])
         
-        model_name = config.model.name
+        model_name = provided_model_name if provided_model_name else config.model.name
         model_wrapper = get_model(model_name)()
         
         model = model_wrapper.build(config.model).to(self.device)
@@ -124,10 +145,20 @@ class ConfigurablePipeline:
                     break
                     
             elif isinstance(wrapper, BaseDetector):
-                with torch.no_grad():
-                    preds = model([det_image])
-                
-                res = wrapper.post_process(preds, self.confidence_threshold)[0]
+                threshold = m.get("confidence_threshold")
+                if threshold is None:
+                    threshold = self.confidence_threshold
+                    
+                if hasattr(wrapper, "_yolo_model"):
+                    import cv2
+                    img_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+                    preds = wrapper._yolo_model.predict(img_bgr, verbose=False, conf=threshold)
+                    res = wrapper.post_process(preds, threshold)[0]
+                else:
+                    with torch.no_grad():
+                        preds = model([det_image])
+                    res = wrapper.post_process(preds, threshold)[0]
+                    
                 context[name] = res
                 
                 result[name] = {
