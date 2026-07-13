@@ -20,6 +20,21 @@ from pycocotools.coco import COCO
 from torch.utils.data import Dataset
 
 
+def apply_clahe(image):
+    # Convert BGR to LAB color space
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to the L-channel
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l)
+    
+    # Merge channels back and convert to BGR
+    limg = cv2.merge((cl, a, b))
+    enhanced_image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    return enhanced_image
+
+
 class ClassificationDataset(Dataset):
     """
     Folder-based image classification dataset for the Gatekeeper model.
@@ -77,6 +92,7 @@ class ClassificationDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         img_path, label = self.samples[idx]
         image = cv2.imread(img_path)
+        image = apply_clahe(image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         if self.transform:
@@ -139,6 +155,7 @@ class COCOSegmentationDataset(Dataset):
         image = cv2.imread(img_path)
         if image is None:
             raise FileNotFoundError(f"Image not found: {img_path}")
+        image = apply_clahe(image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Load annotations
