@@ -7,16 +7,23 @@ tmux attach -t training
 ctrl+b,d
 
 ============to download training weights===========
-tar -czvf all_runs.tar.gz runs/parts_maskrcnn/
+tar -czvf veh_seg_yolo_11_1.tar.gz runs/yolo11_vehicle_seg_v1
 
-scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.tar.gz "C:/Users/Administrator/Desktop/trained_models"
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/runs/cardd_1.tar.gz "C:/Users/Administrator/Desktop/trained_models"
 
-scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/all_runs.zip  "C:/Users/Administrator/Desktop/trained_models"
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-detection/veh_seg_yolo_11_1.tar.gz  "C:/Users/Administrator/Desktop/trained_models"
 
+scp -i "C:/Users/Administrator/Downloads/gpu.pem" ubuntu@ec2-44-207-97-219.compute-1.amazonaws.com:/home/ubuntu/vehicle-dd-yolo/vehicle_seg.tar.gz "C:/Users/Administrator/Desktop/trained_models"
 
+==================for pipeline testing ===================
+python scripts/infer_pipeline.py --pipeline-config configs/pipeline/test_all.yaml --input input_img_testing --output-dir output_img_results_y11
+
+python scripts/infer_pipeline.py --pipeline-config configs/pipeline/test_all.yaml --input input_img_testing --output-dir output_img_results_y11_1
 
 yolo26n.pt
 ============for single image=======================
+python scripts/bulk_inference.py --config "configs/damage/yolo11_damage.yaml" --checkpoint "runs/cardd_yolo11_1/best.pt" --image-dir "input_img_testing" --output-dir "output_img_cardd_y11_clahe" --conf-thresh 0.4
+
 python scripts/inference.py \
   --config configs/damage/maskrcnn_resnet50.yaml \
   --checkpoint runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth \
@@ -27,17 +34,35 @@ python scripts/inference.py \
   
 =============for bulk image========================  
 python scripts/bulk_inference.py \
-	--config "configs/damage/maskrcnn_resnet50.yaml" \
-	--checkpoint "runs/damage_maskrcnn_resnet50_v1/checkpoints/best.pth" \
+	--config "configs/damage/yolo26_damage.yaml" \
+	--checkpoint "runs/cardd_yolov26/best.pt" \
 	--image-dir "input_img_testing" \
-	--output-dir "output_img_tested"
+	--output-dir "output_img_cardd_y26"
+	
+python scripts/bulk_inference.py \
+	--config "configs/vehicle/yolo11_vehicle_seg.yaml" \
+	--checkpoint "runs/vehicle_seg_y11/best.pt" \
+	--image-dir "input_img_testing" \
+	--output-dir "output_img_vehicle_seg_clahe"
 
   
 python scripts/bulk_inference.py \
 	--config "configs/parts/maskrcnn_resnet50.yaml" \
-	--checkpoint "runs/parts_maskrcnn_resnet50_v1/checkpoints/best.pth" \
+	--checkpoint "runs/angle_resnet50_v1/checkpoints/best.pth" \
 	--image-dir "input_img_testing" \
-	--output-dir "output_img_parts"
+	--output-dir "output_img_angle_1"
+	
+python scripts/bulk_inference.py \
+	--config "configs/angle/resnet50.yaml" \
+	--checkpoint "runs/yolo11/best.pt" \
+	--image-dir "input_img_testing" \
+	--output-dir "output_img_parts_yolo11"	
+	
+yolo task=segment mode=predict model=runs/yolo11_t2/best.pt source=input_img_testing save=True project=output_img_parts_yolo_t2 conf=0.5
+
+yolo task=segment mode=predict model=runs/yolo11_t2/best.pt source=input_img_testing save=True project=output_img_parts_yolo_t2
+	
+
 
 
 ===supervisely to yolo==============
@@ -46,6 +71,77 @@ python3 scripts/convert_supervisely_to_yolo.py --input "data/kaggle/car-parts-an
 python3 scripts/convert_supervisely_to_coco.py --input "data/kaggle/car-parts-and-car-damages/car_parts_dataset --output "data/Rcnn_coco_car_parts"
 
 ===part training script=============
-python3 scripts/train.py --config configs/parts/yolo11_parts.yaml --set data.yaml_path=data/yolo_car_damages/dataset.yaml
+python3 scripts/train.py --config configs/vehicle/yolo11_vehicle_seg.yaml --set data.yaml_path=rf_ds_vehicle_seg-3/data.yaml
 
 python3 scripts/train.py --config configs/parts/maskrcnn_resnet50.yaml
+python3 scripts/train.py --config configs/angle/resnet50.yaml
+
+
+yolo segment train data="data/yolo_car_damages/dataset.yaml" model=yolo11n-seg.pt /home/ubuntu/vehicle-detection/runs
+
+
+
+python3 scripts/train.py --config configs/parts/yolo11_parts.yaml
+
+
+
+
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="pchhVPCFfUPsRRRHPHpJ")
+project = rf.workspace("smarts-workspace-rvf6h").project("rf_ds_angle")
+version = project.version(2)
+dataset = version.download("coco")
+
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="pchhVPCFfUPsRRRHPHpJ")
+project = rf.workspace("smarts-workspace-rvf6h").project("rf_ds_angle")
+version = project.version(2)
+dataset = version.download("coco")
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="laIQ4D299IcOUZEiygWP")
+project = rf.workspace("vehicle-detection-9s7wj").project("rf_ds_damage_seg-hsm8w")
+version = project.version(1)
+dataset = version.download("yolov11")
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="laIQ4D299IcOUZEiygWP")
+project = rf.workspace("vehicle-detection-9s7wj").project("rf_ds_damage_seg-hsm8w")
+version = project.version(2)
+dataset = version.download("yolov11")
+                
+                
+                
+python scripts/bulk_inference.py \
+	--config "configs/damage/yolo11_damage.yaml" \
+	--checkpoint "runs/yolo11_damage_seg_v1/weights/best.pt" \
+	--image-dir "input_img_testing" \
+	--output-dir "output_img_damage_yolo11"
+
+
+                
+python scripts/bulk_inference.py --config "configs/vehicle/yolo11_vehicle_seg.yaml" --checkpoint "runs/vehicle_seg_y11/best.pt" --image-dir "input_img_testing" --output-dir "output_img_vehicle_seg_01" --conf-thresh 0.1
+
+
+
+
+
+
+!pip install roboflow
+
+from roboflow import Roboflow
+rf = Roboflow(api_key="laIQ4D299IcOUZEiygWP")
+project = rf.workspace("vehicle-detection-9s7wj").project("rf_ds_vehicle_seg-esros")
+version = project.version(3)
+dataset = version.download("yolov11")
+                

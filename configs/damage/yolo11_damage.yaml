@@ -14,10 +14,10 @@ data:
   class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
 
 training:
-  epochs: 50
-  batch_size: 8
+  epochs: 100
+  batch_size: 16
   optimizer:
-    lr: 0.005
+    lr: 0.01
   # yolo_kwargs:
   #   optimizer: SGD
   #   momentum: 0.9

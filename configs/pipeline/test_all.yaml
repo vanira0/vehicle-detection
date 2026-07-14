@@ -17,8 +17,8 @@ models:
     confidence_threshold: 0.5
 
   - name: "damage"
-    model_name: "yolo26_seg"
-    checkpoint: "runs/cardd_yolov26/best.pt" # Update with actual path
+    model_name: "yolo11_seg"
+    checkpoint: "runs/cardd_yolo11_1/best.pt" # Update with actual path
     confidence_threshold: 0.4
 
 # Post-processing modules to run after all models
