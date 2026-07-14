@@ -52,6 +52,14 @@ class YOLO11ClassificationWrapper(BaseClassifier):
             "exist_ok": True
         }
 
+        # Extract any extra YOLO specific kwargs
+        yolo_kwargs = {}
+        if hasattr(config.training, "yolo_kwargs"):
+            yolo_kwargs = config.training.yolo_kwargs.to_dict()
+            
+        # Merge any custom kwargs provided by the user
+        train_args.update(yolo_kwargs)
+
         results = self._model.train(**train_args)
         return results
 

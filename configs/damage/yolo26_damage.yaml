@@ -17,6 +17,14 @@ training:
   batch_size: 16
   optimizer:
     lr: 0.01
+  # yolo_kwargs:
+  #   optimizer: SGD
+  #   momentum: 0.937
+  #   weight_decay: 0.0005
+  #   patience: 5
+  #   cos_lr: true
+  #   mosaic: 1.0
+  #   copy_paste: 0.0
 
 output:
   runs_dir: runs/damage_yolo26

@@ -161,14 +161,24 @@ class YOLOv8SegDamage(BaseDetector):
         if self._yolo_model is None:
             self.build(model_config)
 
-        results = self._yolo_model.train(
-            data=data_yaml,
-            epochs=getattr(training_config, "epochs", 100),
-            imgsz=getattr(model_config, "image_size", 640),
-            batch=getattr(training_config, "batch_size", 8),
-            lr0=getattr(training_config.optimizer, "lr", 0.001),
-            weight_decay=getattr(training_config.optimizer, "weight_decay", 0.0005),
-            amp=getattr(training_config, "amp", True),
-            device="0" if torch.cuda.is_available() else "cpu",
-        )
+        train_args = {
+            "data": data_yaml,
+            "epochs": getattr(training_config, "epochs", 100),
+            "imgsz": getattr(model_config, "image_size", 640),
+            "batch": getattr(training_config, "batch_size", 8),
+            "lr0": getattr(training_config.optimizer, "lr", 0.001),
+            "weight_decay": getattr(training_config.optimizer, "weight_decay", 0.0005),
+            "amp": getattr(training_config, "amp", True),
+            "device": "0" if torch.cuda.is_available() else "cpu",
+        }
+
+        # Extract any extra YOLO specific kwargs
+        yolo_kwargs = {}
+        if hasattr(training_config, "yolo_kwargs"):
+            yolo_kwargs = training_config.yolo_kwargs.to_dict()
+            
+        # Merge any custom kwargs provided by the user
+        train_args.update(yolo_kwargs)
+
+        results = self._yolo_model.train(**train_args)
         return results
