@@ -80,7 +80,7 @@ def apply_clahe(image):
     l, a, b = cv2.split(lab)
     
     # Apply CLAHE to the L-channel
-    clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     cl = clahe.apply(l)
     
     # Merge channels back and convert to BGR
@@ -251,7 +251,7 @@ def main():
                     color = [int(c) for c in colors[label]]
                     
                     # Draw box
-                    cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 3)
+                    cv2.rectangle(image_bgr, (box[0], box[1]), (box[2], box[3]), color, 2)
                     
                     # Draw label
                     if hasattr(model_wrapper, "_yolo_model") and model_wrapper._yolo_model is not None:
@@ -270,7 +270,7 @@ def main():
                     
                     cv2.putText(
                         image_bgr, label_text, (box[0], box[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2
                     )
                     
                     # Draw mask if available

@@ -1,7 +1,7 @@
 name: "test_all_models"
 device: "cpu"
 confidence_threshold: 0.5
-iou_threshold: 0.4
+iou_threshold: 0.2
 
 # List of models to execute in order
 models:
@@ -14,12 +14,12 @@ models:
   - name: "parts"
     model_name: "yolo11_seg"
     checkpoint: "runs/yolo11_t2/best.pt" # Update with actual path
-    confidence_threshold: 0.5
+    confidence_threshold: 0.3
 
   - name: "damage"
     model_name: "yolo11_seg"
-    checkpoint: "runs/cardd_yolo11_1/best.pt" # Update with actual path
-    confidence_threshold: 0.4
+    checkpoint: "runs/cardd_y11m/trained.pt" # Update with actual path
+    confidence_threshold: 0.3
 
 # Post-processing modules to run after all models
 post_processors:

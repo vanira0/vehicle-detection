@@ -6,7 +6,9 @@ model:
   name: yolo11_seg
   stage: damage
   # variant: YOLO11m-seg
-  weights: yolo11s-seg.pt
+  # weights: yolo11s-seg.pt
+  weights: yolo11m-seg.pt
+
 
 data:
   yaml_path: data/kaggle/data.yaml

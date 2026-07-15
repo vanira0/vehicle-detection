@@ -233,15 +233,16 @@ def main():
                     logger.error(f"Preprocessing failed for {image_name}: {e}")
                     img = None
 
-                # if img is not None:
-                #     clahe_img = apply_clahe(img)
-                #     tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
-                #     cv2.imwrite(tmp_path, clahe_img)
-                #     pipeline_input = tmp_path
-                # else:
-                #     pipeline_input = image_path
+                # apply clahe or not
+                if img is not None:
+                    clahe_img = apply_clahe(img)
+                    tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
+                    cv2.imwrite(tmp_path, clahe_img)
+                    pipeline_input = tmp_path
+                else:
+                    pipeline_input = image_path
                 
-                pipeline_input = image_path
+                # pipeline_input = image_path
                     
                 result = pipeline(pipeline_input)
                 result["image_path"] = image_path  # restore original path
