@@ -9,7 +9,7 @@ model:
   weights: yolo11s-seg.pt
 
 data:
-  yaml_path: data/car_DD_damage_yolo/data.yaml
+  yaml_path: data/kaggle/data.yaml
   image_size: 1024
   class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
 
