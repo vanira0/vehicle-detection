@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from inference.configurable_pipeline import ConfigurablePipeline
 from utils.logger import setup_logger
 from data.preprocessing import resize_image
-from utils.visualization import draw_bboxes
+from utils.visualization import draw_bboxes, overlay_masks
 import cv2
 
 
@@ -307,7 +307,8 @@ def main():
                         angle_text = f"Angle: {class_name}"
                         cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-                    # Extract damaged part indices from orchestrator findings
+
+                    # Extract damaged part indices from orchestrator findings (mask-based)
                     damaged_part_indices = set()
                     findings = result.get("findings", [])
                     for finding in findings:
@@ -368,14 +369,15 @@ def main():
                                         
                             if len(filtered_boxes) > 0:
                                 img_bgr = draw_bboxes(img_bgr, np.array(filtered_boxes), filtered_labels, np.array(filtered_scores) if filtered_scores else None, score_threshold=pipeline.confidence_threshold, label_position="inside_bottom_left")
-                                
-                    # Draw damage boxes
+                               
+                    # Draw damage masks and boxes
                     if "damage" in context:
                         damage_context = context["damage"]
                         boxes = damage_context.get("boxes")
                         labels = damage_context.get("labels")
                         scores = damage_context.get("scores")
-                        
+                        masks = damage_context.get("masks")
+                       
                         damage_classes = None
                         for m in pipeline.models:
                             if m["name"] == "damage":
@@ -399,7 +401,27 @@ def main():
                                 else:
                                     name = f"Damage: {name}"
                                 damage_labels_str.append(name)
-                                
+
+
+                            # Overlay damage segmentation masks
+                            if masks is not None and len(masks) > 0:
+                                img_h, img_w = img_bgr.shape[:2]
+                                resized_masks = []
+                                for mask in masks:
+                                    if mask.shape != (img_h, img_w):
+                                        mask = cv2.resize(
+                                            mask.astype(np.uint8), (img_w, img_h),
+                                            interpolation=cv2.INTER_NEAREST
+                                        )
+                                    resized_masks.append(mask)
+                                img_bgr = overlay_masks(
+                                    img_bgr, np.array(resized_masks),
+                                    damage_labels_str, scores,
+                                    alpha=0.4,
+                                    score_threshold=pipeline.confidence_threshold
+                                )
+
+
                             img_bgr = draw_bboxes(img_bgr, np.array(boxes), damage_labels_str, scores, score_threshold=pipeline.confidence_threshold)
                             
                     annotated_path = os.path.join(args.output_dir, f"annotated_{image_name}")

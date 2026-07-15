@@ -87,6 +87,24 @@ class Orchestrator:
         if len(damage_masks) == 0 or len(part_masks) == 0:
             return findings
 
+
+        # Normalise all masks to a common spatial resolution so that IoU is
+        # valid even when damage and parts models output different sizes
+        # (e.g. MaskRCNN at 1024×1024 vs YOLO resized to orig_shape).
+        target_h, target_w = damage_masks[0].shape[:2]
+        normalised_part_masks = []
+        for pm in part_masks:
+            if pm.shape[:2] != (target_h, target_w):
+                pm = np.array(
+                    __import__("cv2").resize(
+                        pm.astype(np.uint8), (target_w, target_h),
+                        interpolation=__import__("cv2").INTER_NEAREST,
+                    ),
+                    dtype=pm.dtype,
+                )
+            normalised_part_masks.append(pm)
+
+
         for i in range(len(damage_masks)):
             d_mask = damage_masks[i].astype(bool)
             d_label = int(damage_labels[i])
@@ -96,8 +114,9 @@ class Orchestrator:
             best_match = None
             best_iou = 0.0
 
-            for j in range(len(part_masks)):
-                p_mask = part_masks[j].astype(bool)
+
+            for j, p_mask_raw in enumerate(normalised_part_masks):
+                p_mask = p_mask_raw.astype(bool)
                 p_label = int(part_labels[j])
                 p_score = float(part_scores[j])
 
