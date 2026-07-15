@@ -44,4 +44,4 @@ training:
   
 
 output:
-  runs_dir: runs/damage_yolo11
+  runs_dir: runs/damage_yolo11_hp_tune
