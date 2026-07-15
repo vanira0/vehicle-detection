@@ -22,9 +22,26 @@ training:
   #   optimizer: SGD
   #   momentum: 0.9
   #   weight_decay: 0.0005
-  #   patience: 5
+  #   patience: 10
   #   cos_lr: true
   #   mosaic: 1.0
+
+  # --- Advanced YOLO Hyperparameters ---
+  # Every key-value pair here is passed directly to the YOLO model.train() function.
+  yolo_kwargs:
+    optimizer: SGD            # Optimizer choice (e.g., SGD, Adam, AdamW, auto)
+    momentum: 0.937           # Momentum factor (SGD) or beta1 (Adam)
+    weight_decay: 0.001
+    patience: 10               # Early stopping patience (epochs to wait)
+    cos_lr: true              # Use a cosine learning rate scheduler
+
+    # -- Loss Gains --
+    box: 7.5                  # Box loss gain weight
+    cls: 0.5                  # Classification loss gain weight
+    dfl: 1.5                  # Distribution Focal Loss weight
+    # label_smoothing: 0.0      # Label smoothing epsilon (0.0 to 0.1)
+
+  
 
 output:
   runs_dir: runs/damage_yolo11
