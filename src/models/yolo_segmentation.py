@@ -6,6 +6,7 @@ and directly uses the highly-optimized Ultralytics engine.
 """
 
 from typing import Any, Dict, List, Optional
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,6 +21,37 @@ from .base import BaseDetector
 from utils.config import Config
 from .registry import register_model
 
+
+def _apply_clahe_to_batch(trainer) -> None:
+    """Apply CLAHE to each image in the Ultralytics training batch.
+
+
+    Ultralytics training batches contain BGR float tensors in [0, 1].
+    CLAHE is applied to the L-channel in LAB space, matching the
+    preprocessing used at inference time and in the standard dataset.
+    """
+    imgs = trainer.batch["img"]          # [B, C, H, W], float, BGR, [0, 1]
+    device = imgs.device
+    orig_dtype = imgs.dtype
+
+
+    # To uint8 numpy [B, H, W, C]
+    imgs_np = (
+        imgs.permute(0, 2, 3, 1).cpu().float().numpy() * 255
+    ).clip(0, 255).astype(np.uint8)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    for i in range(len(imgs_np)):
+        lab = cv2.cvtColor(imgs_np[i], cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l = clahe.apply(l)
+        imgs_np[i] = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+
+
+    # Back to original dtype/device tensor [B, C, H, W]
+    trainer.batch["img"] = (
+        torch.from_numpy(imgs_np).float() / 255.0
+    ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
 
 @register_model("yolo11_seg")
 @register_model("yolo26_seg")
@@ -95,6 +127,10 @@ class YOLO11SegmentationWrapper(BaseDetector):
         
         # Merge any custom kwargs provided by the user
         train_args.update(yolo_kwargs)
+
+        self._model.add_callback(
+            "on_train_batch_start", _apply_clahe_to_batch
+        )
 
         # Launch YOLO training
         results = self._model.train(**train_args)
