@@ -100,6 +100,25 @@ def apply_clahe(image):
     return enhanced_image
 
 
+
+
+def _compute_box_iou(box1, box2) -> float:
+    """Compute IoU between two [x1, y1, x2, y2] boxes."""
+    ix1 = max(box1[0], box2[0])
+    iy1 = max(box1[1], box2[1])
+    ix2 = min(box1[2], box2[2])
+    iy2 = min(box1[3], box2[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter == 0.0:
+        return 0.0
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - inter
+    return inter / max(union, 1e-6)
+
+
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run configurable vehicle damage detection pipeline")
     parser.add_argument("--pipeline-config", type=str, required=True, help="Path to pipeline YAML config")
@@ -294,6 +313,22 @@ def main():
                     for finding in findings:
                         if "part_index" in finding:
                             damaged_part_indices.add(finding["part_index"])
+
+
+                    # Supplement with bounding-box overlap between damage and parts
+                    # (covers cases where masks are unavailable or IoU threshold not met)
+                    damage_ctx = context.get("damage", {})
+                    parts_ctx = context.get("parts", {})
+                    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
+                    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
+                    if (d_boxes is not None and p_boxes is not None
+                            and len(d_boxes) > 0 and len(p_boxes) > 0):
+                        for pi, p_box in enumerate(p_boxes):
+                            for d_box in d_boxes:
+                                if _compute_box_iou(p_box, d_box) > 0.05:
+                                    damaged_part_indices.add(pi)
+                                    break
+
 
                     # Draw parts boxes (only for damaged parts)
                     if "parts" in context:
