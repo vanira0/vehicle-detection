@@ -4,12 +4,12 @@ experiment_name: yolo11_parts_seg_v1
 model:
   name: yolo11_seg
   stage: parts
-  weights: yolo11m-seg.pt
+  weights: yolo11s-seg.pt
 
 data:
   yaml_path: data/y11_kaggle_yolo/parts/dataset.yaml
   image_size: 1024
-  class_names: ["Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk", "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", "Mirror", "Roof"]
+  class_names: ["Quarter-panel", "Front-wheel", "Back-window", "Trunk", "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", "Mirror", "Roof"]
 
 training:
   epochs: 100                                   # Total number of training rounds over the entire dataset
@@ -27,4 +27,4 @@ training:
     mosaic: 1.0                                 # Probability (0 to 1) of combining 4 images into 1 for better context learning
 
 output:
-  runs_dir: runs/yolo11m_parts_seg
+  runs_dir: runs/yolo11s_parts_seg
