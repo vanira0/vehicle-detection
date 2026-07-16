@@ -13,7 +13,7 @@ data:
 
 training:
   epochs: 100                                   # Total number of training rounds over the entire dataset
-  batch_size: 16                                # Number of images processed at once before updating model weights
+  batch_size: 8                                # Number of images processed at once before updating model weights
   optimizer:
     lr: 0.005                                   # Initial learning rate (the step size for updating weights)
 
