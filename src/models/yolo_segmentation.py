@@ -23,17 +23,29 @@ from .registry import register_model
 
 
 def _apply_clahe_to_batch(trainer) -> None:
-    """Apply CLAHE to each image in the Ultralytics training batch.
+    """Apply CLAHE to each image in the Ultralytics training batch if available.
 
-
-    Ultralytics training batches contain BGR float tensors in [0, 1].
-    CLAHE is applied to the L-channel in LAB space, matching the
-    preprocessing used at inference time and in the standard dataset.
+    Some Ultralytics versions expose the batch through ``trainer.batch`` while
+    others use a slightly different object layout. This callback must stay
+    defensive so training can continue even when the batch payload is missing.
     """
-    imgs = trainer.batch["img"]          # [B, C, H, W], float, BGR, [0, 1]
+    batch = getattr(trainer, "batch", None)
+    if batch is None:
+        return
+
+    imgs = None
+    if isinstance(batch, dict):
+        imgs = batch.get("img")
+    elif hasattr(batch, "get"):
+        imgs = batch.get("img")
+    elif hasattr(batch, "img"):
+        imgs = batch.img
+
+    if imgs is None:
+        return
+
     device = imgs.device
     orig_dtype = imgs.dtype
-
 
     # To uint8 numpy [B, H, W, C]
     imgs_np = (
@@ -47,11 +59,19 @@ def _apply_clahe_to_batch(trainer) -> None:
         l = clahe.apply(l)
         imgs_np[i] = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
-
     # Back to original dtype/device tensor [B, C, H, W]
-    trainer.batch["img"] = (
-        torch.from_numpy(imgs_np).float() / 255.0
-    ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
+    if isinstance(batch, dict):
+        batch["img"] = (
+            torch.from_numpy(imgs_np).float() / 255.0
+        ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
+    elif hasattr(batch, "__setitem__"):
+        batch["img"] = (
+            torch.from_numpy(imgs_np).float() / 255.0
+        ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
+    elif hasattr(batch, "img"):
+        batch.img = (
+            torch.from_numpy(imgs_np).float() / 255.0
+        ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
 
 @register_model("yolo11_seg")
 @register_model("yolo26_seg")
