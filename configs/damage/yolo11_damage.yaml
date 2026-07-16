@@ -17,7 +17,7 @@ data:
 
 training:
   epochs: 100
-  batch_size: 16
+  batch_size: 8
   optimizer:
     lr: 0.005
   # yolo_kwargs:
