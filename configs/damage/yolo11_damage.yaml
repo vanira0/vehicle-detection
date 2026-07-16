@@ -13,6 +13,8 @@ model:
 data:
   yaml_path: data/kaggle/data.yaml
   image_size: 1024
+  num_workers: 0
+  pin_memory: false
   class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
 
 training:

@@ -70,13 +70,36 @@ def parse_args():
     return parser.parse_args()
 
 
+def resolve_data_loader_settings(data_cfg):
+    """Return dataloader settings that are robust for this training setup."""
+    configured_workers = getattr(data_cfg, "num_workers", None)
+    if configured_workers is None:
+        configured_workers = 0
+
+    try:
+        num_workers = int(configured_workers)
+    except (TypeError, ValueError):
+        num_workers = 0
+
+    if num_workers < 0:
+        num_workers = 0
+
+    # The project occasionally crashes in Linux/WSL-style environments when
+    # PyTorch multiprocessing workers load images and annotations. Using a
+    # single process is more reliable for training runs.
+    if num_workers > 0 and os.name == "posix":
+        num_workers = 0
+
+    pin_memory = getattr(data_cfg, "pin_memory", False)
+    return num_workers, pin_memory
+
+
 def build_data_loaders(config):
     """Build train and validation data loaders from config."""
     stage = config.model.stage
     data_cfg = config.data
     batch_size = config.training.batch_size
-    num_workers = getattr(data_cfg, "num_workers", 4)
-    pin_memory = getattr(data_cfg, "pin_memory", True)
+    num_workers, pin_memory = resolve_data_loader_settings(data_cfg)
 
     if getattr(data_cfg, "annotation_format", "") == "folder" or stage in ["gatekeeper", "angle"]:
         # Folder-based classification dataset
