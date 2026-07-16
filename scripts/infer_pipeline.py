@@ -117,6 +117,63 @@ def _compute_box_iou(box1, box2) -> float:
     return inter / max(union, 1e-6)
 
 
+def _compute_mask_iou(mask1, mask2) -> float:
+    """Compute IoU between two binary masks."""
+    mask1 = mask1.astype(bool)
+    mask2 = mask2.astype(bool)
+    if mask1.shape != mask2.shape:
+        target_h = max(mask1.shape[0], mask2.shape[0])
+        target_w = max(mask1.shape[1], mask2.shape[1])
+        mask1 = cv2.resize(mask1.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
+        mask2 = cv2.resize(mask2.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    return float(intersection / max(union, 1e-6))
+
+
+def _get_damaged_part_indices(findings, damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=None):
+    """Return part indices whose overlap with damage exceeds the requested area ratio."""
+    damaged_part_indices = set()
+
+    for finding in findings:
+        if "part_index" in finding:
+            damaged_part_indices.add(int(finding["part_index"]))
+
+    d_masks = damage_ctx.get("masks") if damage_ctx else None
+    p_masks = parts_ctx.get("masks") if parts_ctx else None
+    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
+    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
+    d_scores = damage_ctx.get("scores") if damage_ctx else None
+
+    if confidence_threshold is None:
+        confidence_threshold = 0.0
+
+    if d_masks is not None and p_masks is not None and len(d_masks) > 0 and len(p_masks) > 0:
+        for pi, p_mask in enumerate(p_masks):
+            for d_mask in d_masks:
+                if _compute_mask_iou(p_mask, d_mask) > 0.01:
+                    damaged_part_indices.add(pi)
+                    break
+
+    if d_boxes is not None and p_boxes is not None and len(d_boxes) > 0 and len(p_boxes) > 0:
+        for pi, p_box in enumerate(p_boxes):
+            for di, d_box in enumerate(d_boxes):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+
+                damage_area = max((d_box[2] - d_box[0]) * (d_box[3] - d_box[1]), 1e-6)
+                ix1 = max(p_box[0], d_box[0])
+                iy1 = max(p_box[1], d_box[1])
+                ix2 = min(p_box[2], d_box[2])
+                iy2 = min(p_box[3], d_box[3])
+                overlap_area = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+                overlap_ratio = overlap_area / damage_area
+                if overlap_ratio >= overlap_ratio_threshold:
+                    damaged_part_indices.add(pi)
+                    break
+
+    return damaged_part_indices
 
 
 def parse_args():
@@ -308,35 +365,25 @@ def main():
                         cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
 
-                    # Extract damaged part indices from orchestrator findings (mask-based)
-                    damaged_part_indices = set()
                     findings = result.get("findings", [])
-                    for finding in findings:
-                        if "part_index" in finding:
-                            damaged_part_indices.add(finding["part_index"])
-
-
-                    # Supplement with bounding-box overlap between damage and parts
-                    # (covers cases where masks are unavailable or IoU threshold not met)
                     damage_ctx = context.get("damage", {})
                     parts_ctx = context.get("parts", {})
-                    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
-                    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
-                    if (d_boxes is not None and p_boxes is not None
-                            and len(d_boxes) > 0 and len(p_boxes) > 0):
-                        for pi, p_box in enumerate(p_boxes):
-                            for d_box in d_boxes:
-                                if _compute_box_iou(p_box, d_box) > 0.05:
-                                    damaged_part_indices.add(pi)
-                                    break
+                    damaged_part_indices = _get_damaged_part_indices(
+                        findings,
+                        damage_ctx,
+                        parts_ctx,
+                        overlap_ratio_threshold=0.7,
+                        confidence_threshold=pipeline.confidence_threshold,
+                    )
 
 
-                    # Draw parts boxes (only for damaged parts)
-                    if "parts" in context:
+                    # Draw damaged parts as segmentation masks only when damage exists
+                    if "parts" in context and damage_ctx is not None and len(damage_ctx.get("boxes", [])) > 0:
                         parts_context = context["parts"]
                         boxes = parts_context.get("boxes")
                         labels = parts_context.get("labels")
                         scores = parts_context.get("scores")
+                        masks = parts_context.get("masks")
                         
                         part_classes = None
                         for m in pipeline.models:
@@ -348,14 +395,12 @@ def main():
                                 break
                                 
                         if boxes is not None and len(boxes) > 0:
-                            filtered_boxes = []
                             filtered_labels = []
                             filtered_scores = []
+                            filtered_masks = []
                             
                             for i in range(len(boxes)):
                                 if i in damaged_part_indices:
-                                    filtered_boxes.append(boxes[i])
-                                    
                                     name = str(labels[i])
                                     if part_classes is not None:
                                         if isinstance(part_classes, dict) and int(labels[i]) in part_classes:
@@ -366,17 +411,35 @@ def main():
                                     
                                     if scores is not None and i < len(scores):
                                         filtered_scores.append(scores[i])
+
+                                    if masks is not None and len(masks) > 0 and i < len(masks):
+                                        filtered_masks.append(masks[i])
                                         
-                            if len(filtered_boxes) > 0:
-                                img_bgr = draw_bboxes(img_bgr, np.array(filtered_boxes), filtered_labels, np.array(filtered_scores) if filtered_scores else None, score_threshold=pipeline.confidence_threshold, label_position="inside_bottom_left")
+                            if len(filtered_masks) > 0:
+                                img_h, img_w = img_bgr.shape[:2]
+                                resized_masks = []
+                                for mask in filtered_masks:
+                                    if mask.shape != (img_h, img_w):
+                                        mask = cv2.resize(
+                                            mask.astype(np.uint8), (img_w, img_h),
+                                            interpolation=cv2.INTER_NEAREST,
+                                        )
+                                    resized_masks.append(mask)
+                                img_bgr = overlay_masks(
+                                    img_bgr,
+                                    np.array(resized_masks),
+                                    filtered_labels,
+                                    np.array(filtered_scores) if filtered_scores else None,
+                                    alpha=0.35,
+                                    score_threshold=pipeline.confidence_threshold,
+                                )
                                
-                    # Draw damage masks and boxes
+                    # Draw damage as bounding boxes
                     if "damage" in context:
                         damage_context = context["damage"]
                         boxes = damage_context.get("boxes")
                         labels = damage_context.get("labels")
                         scores = damage_context.get("scores")
-                        masks = damage_context.get("masks")
                        
                         damage_classes = None
                         for m in pipeline.models:
@@ -402,27 +465,13 @@ def main():
                                     name = f"Damage: {name}"
                                 damage_labels_str.append(name)
 
-
-                            # Overlay damage segmentation masks
-                            if masks is not None and len(masks) > 0:
-                                img_h, img_w = img_bgr.shape[:2]
-                                resized_masks = []
-                                for mask in masks:
-                                    if mask.shape != (img_h, img_w):
-                                        mask = cv2.resize(
-                                            mask.astype(np.uint8), (img_w, img_h),
-                                            interpolation=cv2.INTER_NEAREST
-                                        )
-                                    resized_masks.append(mask)
-                                img_bgr = overlay_masks(
-                                    img_bgr, np.array(resized_masks),
-                                    damage_labels_str, scores,
-                                    alpha=0.4,
-                                    score_threshold=pipeline.confidence_threshold
-                                )
-
-
-                            img_bgr = draw_bboxes(img_bgr, np.array(boxes), damage_labels_str, scores, score_threshold=pipeline.confidence_threshold)
+                            img_bgr = draw_bboxes(
+                                img_bgr,
+                                np.array(boxes),
+                                damage_labels_str,
+                                scores,
+                                score_threshold=pipeline.confidence_threshold,
+                            )
                             
                     annotated_path = os.path.join(args.output_dir, f"annotated_{image_name}")
                     cv2.imwrite(annotated_path, img_bgr)

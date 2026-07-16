@@ -2,6 +2,7 @@
 Tests for the inference pipeline components.
 """
 
+import importlib.util
 import os
 import sys
 
@@ -16,6 +17,14 @@ from evaluation.metrics import (
     compute_mask_iou,
     _compute_box_iou,
 )
+
+
+spec = importlib.util.spec_from_file_location(
+    "infer_pipeline",
+    os.path.join(os.path.dirname(__file__), "..", "scripts", "infer_pipeline.py"),
+)
+infer_pipeline = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(infer_pipeline)
 
 
 class TestOrchestrator:
@@ -96,6 +105,26 @@ class TestOrchestrator:
         assert self.orchestrator._classify_severity(0.10) == "moderate"
         assert self.orchestrator._classify_severity(0.25) == "severe"
         assert self.orchestrator._classify_severity(0.50) == "critical"
+
+
+def test_no_parts_when_damage_is_below_confidence_threshold():
+    """Parts should not be selected when the damage detection is below threshold."""
+    damage_ctx = {
+        "boxes": np.array([[0, 0, 10, 10]], dtype=float),
+        "labels": np.array([0]),
+        "scores": np.array([0.2]),
+    }
+    parts_ctx = {
+        "boxes": np.array([[0, 0, 20, 20]], dtype=float),
+        "labels": np.array([1]),
+        "scores": np.array([0.9]),
+    }
+
+    indices = infer_pipeline._get_damaged_part_indices(
+        [], damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=0.5
+    )
+
+    assert indices == set()
 
     def test_findings_sorted_by_severity(self):
         """Findings should be sorted most severe first."""

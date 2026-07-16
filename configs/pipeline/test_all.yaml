@@ -1,7 +1,7 @@
 name: "test_all_models"
 device: "cpu"
 confidence_threshold: 0.5
-iou_threshold: 0.2
+iou_threshold: 0.4
 
 # List of models to execute in order
 models:
