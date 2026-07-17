@@ -4,7 +4,7 @@ experiment_name: yolo26_parts_seg_v1
 model:
   name: yolo26_seg
   stage: parts
-  weights: yolo26-seg.pt
+  weights: yolo26n-seg.pt
 
 data:
   yaml_path: data/y11_kaggle_yolo/parts/dataset.yaml

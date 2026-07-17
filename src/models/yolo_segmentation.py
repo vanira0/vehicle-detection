@@ -22,6 +22,36 @@ from utils.config import Config
 from .registry import register_model
 
 
+def _resolve_weights_path(weights: Optional[str], project_root: Optional[str] = None) -> str:
+    """Resolve a local checkpoint path or fall back to an available local YOLO11 weight."""
+    if not weights:
+        return "yolo11n-seg.pt"
+
+    if not project_root:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+    if os.path.isabs(weights) or os.path.exists(weights):
+        return weights
+
+    project_path = os.path.join(project_root, weights)
+    if os.path.exists(project_path):
+        return project_path
+
+    if weights.startswith("yolo26"):
+        fallback_candidates = [
+            "yolo11s-seg.pt",
+            "yolo11m-seg.pt",
+            "yolo11n-seg.pt",
+            "yolo26n-seg.pt"
+        ]
+        for fallback in fallback_candidates:
+            fallback_path = os.path.join(project_root, fallback)
+            if os.path.exists(fallback_path):
+                return fallback_path
+
+    return weights
+
+
 def _apply_clahe_to_batch(trainer) -> None:
     """Apply CLAHE to each image in the Ultralytics training batch if available.
 
@@ -95,7 +125,9 @@ class YOLO11SegmentationWrapper(BaseDetector):
         YOLO uses its own wrapper, so we return self, or the YOLO model directly.
         Here we initialize the YOLO model from a weight file (e.g. 'yolo11n-seg.pt').
         """
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         weights = getattr(model_config, "weights", "yolo11n-seg.pt")
+        weights = _resolve_weights_path(weights, project_root)
         self._model = YOLO(weights)
         
         # We return a dummy nn.Module to satisfy the BaseDetector type signature
