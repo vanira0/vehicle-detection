@@ -12,8 +12,8 @@ models:
   # - name: "angle"
   #   checkpoint: "runs/angle_resnet50_v3/checkpoints/best.pth"  # Update with actual path
   - name: "parts"
-    model_name: "yolo11_seg"
-    checkpoint: "runs/yolo11_t2/best.pt" # Update with actual path
+    model_name: "yolo26_seg"
+    checkpoint: "runs/parts_yolo26/best.pt" # Update with actual path
     confidence_threshold: 0.3
 
   - name: "damage"

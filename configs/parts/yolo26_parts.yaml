@@ -1,10 +1,10 @@
 _base_: ../base.yaml
-experiment_name: yolo11_parts_seg_v1
+experiment_name: yolo26_parts_seg_v1
 
 model:
-  name: yolo11_seg
+  name: yolo26_seg
   stage: parts
-  weights: yolo11s-seg.pt
+  weights: yolo26-seg.pt
 
 data:
   yaml_path: data/y11_kaggle_yolo/parts/dataset.yaml
@@ -15,16 +15,21 @@ training:
   epochs: 100                                   # Total number of training rounds over the entire dataset
   batch_size: 8                                # Number of images processed at once before updating model weights
   optimizer:
-    lr: 0.005                                   # Initial learning rate (the step size for updating weights)
+    lr: 0.001                                   # Initial learning rate (the step size for updating weights)
+   
+    
+
 
   # NEW: Everything in this block gets passed directly to YOLO11 natively!
   yolo_kwargs:
-    optimizer: SGD                              # Algorithm used to minimize the loss (e.g., SGD, AdamW)
+    optimizer: AdamW
+    weight_decay: 0.01  # AdamW handles weight decay natively and robustly
+    # optimizer: SGD                            # Algorithm used to minimize the loss (e.g., SGD, AdamW)
     momentum: 0.9                               # Momentum factor to accelerate gradients in a consistent direction
-    weight_decay: 0.001                        # L2 penalty to prevent overfitting by penalizing large weights
+    # weight_decay: 0.001                       # L2 penalty to prevent overfitting by penalizing large weights
     patience: 20                                # Early stopping patience: stop training if no improvement after 5 epochs
     cos_lr: true                                # True to use a cosine annealing schedule to smoothly lower the learning rate
     mosaic: 1.0                                 # Probability (0 to 1) of combining 4 images into 1 for better context learning
-
+    accumulate: 4                               # Simulates an effective batch size of 32 (8 * 4)
 output:
-  runs_dir: runs/yolo11s_parts
+  runs_dir: runs/yolo26_parts_1
