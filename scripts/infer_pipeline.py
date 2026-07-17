@@ -250,6 +250,78 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
         return
 
 
+# def init_csv_files(models, output_dir: str):
+#     """Initialize per-model CSV files and one combined CSV."""
+#     for model_cfg in models:
+#         name = model_cfg["name"]
+#         csv_path = os.path.join(output_dir, f"{name}_predictions.csv")
+#         with open(csv_path, "w", newline="") as f:
+#             pass
+
+#     combined_csv_path = os.path.join(output_dir, "all_predictions.csv")
+#     with open(combined_csv_path, "w", newline="") as f:
+#         pass
+
+
+# def append_to_combined_csv(model_name: str, image_name: str, context_data: dict, output_dir: str, class_names: list = None):
+#     """Append one row per classification/detection into a single combined CSV."""
+#     csv_path = os.path.join(output_dir, "all_predictions.csv")
+#     is_empty = os.path.getsize(csv_path) == 0 if os.path.exists(csv_path) else True
+
+#     # Classification output: angle / gatekeeper
+#     if "predicted_class" in context_data or "is_damaged" in context_data:
+#         with open(csv_path, "a", newline="") as f:
+#             writer = csv.writer(f)
+#             if is_empty:
+#                 writer.writerow([
+#                     "image_name", "model_name", "predicted_class", "class_name",
+#                     "confidence", "class_id", "score", "box_x1", "box_y1", "box_x2", "box_y2"
+#                 ])
+
+#             pred_class = context_data.get("predicted_class")
+#             class_name = ""
+#             if class_names is not None:
+#                 try:
+#                     idx = int(pred_class)
+#                     if 0 <= idx < len(class_names):
+#                         class_name = class_names[idx]
+#                 except (ValueError, TypeError):
+#                     pass
+
+#             writer.writerow([
+#                 image_name, model_name, pred_class, class_name,
+#                 context_data.get("confidence", 0.0), "", "", "", "", "", ""
+#             ])
+#         return
+
+#     # Detection/segmentation output: parts / damage
+#     if "boxes" in context_data and "labels" in context_data:
+#         with open(csv_path, "a", newline="") as f:
+#             writer = csv.writer(f)
+#             if is_empty:
+#                 writer.writerow([
+#                     "image_name", "model_name", "predicted_class", "class_name",
+#                     "confidence", "class_id", "score", "box_x1", "box_y1", "box_x2", "box_y2"
+#                 ])
+
+#             boxes = context_data.get("boxes", [])
+#             labels = context_data.get("labels", [])
+#             scores = context_data.get("scores", [])
+
+#             for i in range(len(labels)):
+#                 box = boxes[i]
+#                 label = int(labels[i])
+#                 class_name = ""
+#                 if class_names is not None and 0 <= label < len(class_names):
+#                     class_name = class_names[label]
+
+#                 score = float(scores[i]) if i < len(scores) else 1.0
+#                 writer.writerow([
+#                     image_name, model_name, "", class_name, "",
+#                     label, score, float(box[0]), float(box[1]), float(box[2]), float(box[3])
+#                 ])
+#         return
+
 def main():
     args = parse_args()
     logger = setup_logger("infer_pipeline")
@@ -335,6 +407,7 @@ def main():
                     if name in context:
                         class_names = m.get("config", {}).get("data.class_names")
                         append_to_csv(name, image_name, context[name], args.output_dir, class_names)
+                        # append_to_combined_csv(name, image_name, context[name], args.output_dir, class_names)
                 
                 # Write to JSONL
                 jsonl_file.write(json.dumps(result, default=default_serializer) + "\n")
