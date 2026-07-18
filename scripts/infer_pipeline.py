@@ -176,6 +176,53 @@ def _get_damaged_part_indices(findings, damage_ctx, parts_ctx, overlap_ratio_thr
     return damaged_part_indices
 
 
+def _get_damage_part_pairs(damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=None):
+    """Return a list of tuples (part_index, damage_index) that overlap."""
+    pairs = []
+    
+    d_masks = damage_ctx.get("masks") if damage_ctx else None
+    p_masks = parts_ctx.get("masks") if parts_ctx else None
+    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
+    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
+    d_scores = damage_ctx.get("scores") if damage_ctx else None
+
+    if confidence_threshold is None:
+        confidence_threshold = 0.0
+
+    if d_masks is not None and p_masks is not None and len(d_masks) > 0 and len(p_masks) > 0:
+        for pi, p_mask in enumerate(p_masks):
+            for di, d_mask in enumerate(d_masks):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+                if _compute_mask_iou(p_mask, d_mask) > 0.01:
+                    pairs.append((pi, di))
+
+    elif d_boxes is not None and p_boxes is not None and len(d_boxes) > 0 and len(p_boxes) > 0:
+        for pi, p_box in enumerate(p_boxes):
+            for di, d_box in enumerate(d_boxes):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+
+                damage_area = max((d_box[2] - d_box[0]) * (d_box[3] - d_box[1]), 1e-6)
+                ix1 = max(p_box[0], d_box[0])
+                iy1 = max(p_box[1], d_box[1])
+                ix2 = min(p_box[2], d_box[2])
+                iy2 = min(p_box[3], d_box[3])
+                overlap_area = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+                overlap_ratio = overlap_area / damage_area
+                
+                # Also check intersection over part area, just in case damage is larger than part
+                part_area = max((p_box[2] - p_box[0]) * (p_box[3] - p_box[1]), 1e-6)
+                part_overlap_ratio = overlap_area / part_area
+                
+                if overlap_ratio >= overlap_ratio_threshold or part_overlap_ratio >= overlap_ratio_threshold:
+                    pairs.append((pi, di))
+
+    return pairs
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run configurable vehicle damage detection pipeline")
     parser.add_argument("--pipeline-config", type=str, required=True, help="Path to pipeline YAML config")
@@ -194,6 +241,15 @@ def init_csv_files(models, output_dir: str):
         # So we'll just clear the files here.
         with open(csv_path, "w", newline="") as f:
             pass
+
+    # Initialize consolidated CSV
+    csv_path = os.path.join(output_dir, "damaged_parts_consolidated.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "image_name", "part_name", "part_score", "part_x1", "part_y1", "part_x2", "part_y2",
+            "damage_name", "damage_score", "damage_x1", "damage_y1", "damage_x2", "damage_y2"
+        ])
 
 
 def append_to_csv(model_name: str, image_name: str, context_data: dict, output_dir: str, class_names: list = None):
@@ -245,9 +301,71 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
                 class_name = ""
                 if class_names is not None and 0 <= label < len(class_names):
                     class_name = class_names[label]
-                score = float(scores[i]) if i < len(scores) else 1.0
-                writer.writerow([image_name, label, class_name, score, box[0], box[1], box[2], box[3]])
         return
+
+
+def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list):
+    """Append damaged parts to consolidated CSV."""
+    if not pairs:
+        return
+        
+    csv_path = os.path.join(output_dir, "damaged_parts_consolidated.csv")
+    
+    # Get class names
+    part_classes = None
+    damage_classes = None
+    for m in pipeline_models:
+        if m["name"] == "parts":
+            if hasattr(m.get("wrapper", None), "_yolo_model"):
+                part_classes = m["wrapper"]._yolo_model.names
+            else:
+                part_classes = m.get("config", {}).get("data.class_names")
+        elif m["name"] == "damage":
+            if hasattr(m.get("wrapper", None), "_yolo_model"):
+                damage_classes = m["wrapper"]._yolo_model.names
+            else:
+                damage_classes = m.get("config", {}).get("data.class_names")
+
+    d_boxes = damage_ctx.get("boxes", [])
+    d_labels = damage_ctx.get("labels", [])
+    d_scores = damage_ctx.get("scores", [])
+    
+    p_boxes = parts_ctx.get("boxes", [])
+    p_labels = parts_ctx.get("labels", [])
+    p_scores = parts_ctx.get("scores", [])
+    
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        for pi, di in pairs:
+            # Part info
+            p_box = p_boxes[pi] if pi < len(p_boxes) else [0,0,0,0]
+            p_label = int(p_labels[pi]) if pi < len(p_labels) else -1
+            p_score = float(p_scores[pi]) if pi < len(p_scores) else 1.0
+            
+            p_name = str(p_label)
+            if part_classes is not None:
+                if isinstance(part_classes, dict) and p_label in part_classes:
+                    p_name = part_classes[p_label]
+                elif isinstance(part_classes, list) and 0 <= p_label < len(part_classes):
+                    p_name = part_classes[p_label]
+                    
+            # Damage info
+            d_box = d_boxes[di] if di < len(d_boxes) else [0,0,0,0]
+            d_label = int(d_labels[di]) if di < len(d_labels) else -1
+            d_score = float(d_scores[di]) if di < len(d_scores) else 1.0
+            
+            d_name = str(d_label)
+            if damage_classes is not None:
+                if isinstance(damage_classes, dict) and d_label in damage_classes:
+                    d_name = damage_classes[d_label]
+                elif isinstance(damage_classes, list) and 0 <= d_label < len(damage_classes):
+                    d_name = damage_classes[d_label]
+                    
+            writer.writerow([
+                image_name, 
+                p_name, p_score, p_box[0], p_box[1], p_box[2], p_box[3],
+                d_name, d_score, d_box[0], d_box[1], d_box[2], d_box[3]
+            ])
 
 
 # def init_csv_files(models, output_dir: str):
@@ -447,6 +565,16 @@ def main():
                         parts_ctx,
                         overlap_ratio_threshold=0.7,
                         confidence_threshold=pipeline.confidence_threshold,
+                    )
+                    
+                    damage_part_pairs = _get_damage_part_pairs(
+                        damage_ctx,
+                        parts_ctx,
+                        overlap_ratio_threshold=0.7,
+                        confidence_threshold=pipeline.confidence_threshold,
+                    )
+                    append_damaged_parts_csv(
+                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models
                     )
 
 
