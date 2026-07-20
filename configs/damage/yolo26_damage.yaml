@@ -1,6 +1,6 @@
 _base_: ../base.yaml
 
-experiment_name: yolo26_damage_seg_v1
+experiment_name: yolo26_damage_seg_cardd
 
 model:
   name: yolo26_seg
@@ -8,16 +8,16 @@ model:
   weights: yolo26s-seg.pt
 
 data:
-  yaml_path: rf_ds_damage_v-1/data.yaml
+  yaml_path: rf_ds_damage_seg_1-1/data.yaml
   image_size: 1024
   # class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
-  class_names: ['dent', 'scratch', 'broken']
+  class_names: ['Broken', 'Dent', 'Missing', 'Scratch', 'Shattered']
 
 training:
   epochs: 100
-  batch_size: 16
+  batch_size: 8
   optimizer:
-    lr: 0.001
+    lr: 0.005
   yolo_kwargs:
     optimizer: SGD
     momentum: 0.937
@@ -28,4 +28,4 @@ training:
   #   copy_paste: 0.0
 
 output:
-  runs_dir: runs/damage_yolo26_rb_vik
+  runs_dir: runs/damage_yolo26_cardd_in5class
