@@ -8,7 +8,7 @@ model:
   weights: yolo26m-seg.pt                  # Upgraded to Medium weights
 
 data:
-  yaml_path: rf_ds_damage_seg_1-1/data.yaml
+  yaml_path: vehicle_damage_cardd-_dup-1/data.yaml
   image_size: 1024
   # class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
   class_names: ['Broken', 'Dent', 'Scratch']
@@ -37,4 +37,4 @@ training:
     hsv_v: 0.4
 
 output:
-  runs_dir: runs/damage_yolo26m_cardd_in5class
+  runs_dir: runs/damage_yolo26m_cardd_in3class
