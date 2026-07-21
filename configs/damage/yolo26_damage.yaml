@@ -10,6 +10,7 @@ model:
 data:
   yaml_path: rf_ds_damage_seg_1-1/data.yaml
   image_size: 1024
+  # class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
   class_names: ['Broken', 'Dent', 'Missing', 'Scratch', 'Shattered']
 
 training:
@@ -22,10 +23,7 @@ training:
     weight_decay: 0.0005
     patience: 30
     warmup_epochs: 5.0
-    
-    # --- COMBATING CLASS IMBALANCE ---
-    fl_gamma: 1.5                          # Focal Loss for minority classes
-    
+        
     # --- AUGMENTATIONS ---
     mosaic: 1.0
     mixup: 0.1
