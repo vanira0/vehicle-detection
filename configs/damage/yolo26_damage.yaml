@@ -11,23 +11,27 @@ data:
   yaml_path: rf_ds_damage_seg_1-1/data.yaml
   image_size: 1024
   # class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
-  class_names: ['Broken', 'Dent', 'Missing', 'Scratch', 'Shattered']
+  class_names: ['Broken', 'Dent', 'Scratch']
 
 training:
   epochs: 150
-  batch_size: 8                            # Maintained to respect memory limits
+  batch_size: 8
   
   yolo_kwargs:
-    optimizer: AdamW                       # AdamW for small-batch stability
-    lr0: 0.0005                            # Low learning rate to prevent erratic updates
-    weight_decay: 0.0005
+    optimizer: AdamW       # Perfect for batch size 8
+    lr0: 0.001             # We can slightly increase this safely now since the data is balanced
+    weight_decay: 0.0005   # Prevents overfitting
     patience: 30
-    warmup_epochs: 5.0
-        
+    warmup_epochs: 3.0     # Standard warmup is fine now
+    
+    # --- COMBATING CLASS IMBALANCE ---
+    # fl_gamma is REMOVED! Your dataset is balanced enough that 
+    # standard loss will actually perform better and faster.
+    
     # --- AUGMENTATIONS ---
-    mosaic: 1.0
+    mosaic: 1.0            
     mixup: 0.1
-    copy_paste: 0.2
+    copy_paste: 0.2        
     degrees: 10.0
     hsv_s: 0.7
     hsv_v: 0.4
