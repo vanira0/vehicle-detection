@@ -1,31 +1,38 @@
 _base_: ../base.yaml
 
-experiment_name: yolo26_damage_seg_cardd
+experiment_name: yolo26m_damage_seg_cardd  # Updated to reflect 'm'
 
 model:
   name: yolo26_seg
   stage: damage
-  weights: yolo26s-seg.pt
+  weights: yolo26m-seg.pt                  # Upgraded to Medium weights
 
 data:
   yaml_path: rf_ds_damage_seg_1-1/data.yaml
   image_size: 1024
-  # class_names: ['dent', 'scratch', 'crack', 'glass shatter', 'lamp broken', 'tire flat']
   class_names: ['Broken', 'Dent', 'Missing', 'Scratch', 'Shattered']
 
 training:
-  epochs: 100
-  batch_size: 8
-  optimizer:
-    lr: 0.005
+  epochs: 150
+  batch_size: 8                            # Maintained to respect memory limits
+  
   yolo_kwargs:
-    optimizer: SGD
-    momentum: 0.937
-    weight_decay: 0.001
-    patience: 20
-  #   cos_lr: true
-  #   mosaic: 1.0
-  #   copy_paste: 0.0
+    optimizer: AdamW                       # AdamW for small-batch stability
+    lr0: 0.0005                            # Low learning rate to prevent erratic updates
+    weight_decay: 0.0005
+    patience: 30
+    warmup_epochs: 5.0
+    
+    # --- COMBATING CLASS IMBALANCE ---
+    fl_gamma: 1.5                          # Focal Loss for minority classes
+    
+    # --- AUGMENTATIONS ---
+    mosaic: 1.0
+    mixup: 0.1
+    copy_paste: 0.2
+    degrees: 10.0
+    hsv_s: 0.7
+    hsv_v: 0.4
 
 output:
-  runs_dir: runs/damage_yolo26_cardd_in5class
+  runs_dir: runs/damage_yolo26m_cardd_in5class

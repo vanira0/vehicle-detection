@@ -7,7 +7,7 @@ model:
   weights: yolo26n-seg.pt
 
 data:
-  yaml_path: data/yolo_car_damages/dataset.yaml
+  yaml_path: rf_ds_parts_merge-1/data.yaml
   image_size: 1024
   class_names: ["Quarter-panel", "Front-wheel", "Back-window", "Trunk", "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", "Mirror", "Roof"]
 
