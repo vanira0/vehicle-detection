@@ -14,7 +14,7 @@ data:
   class_names: ['Broken', 'Dent', 'Scratch']
 
 training:
-  epochs: 150
+  epochs: 100
   batch_size: 8
   
   yolo_kwargs:
