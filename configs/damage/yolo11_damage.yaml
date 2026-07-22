@@ -13,14 +13,14 @@ data:
   class_names: ['Broken', 'Dent', 'Scratch']
 
 training:
-  epochs: 100                # Increased to 150 (Patience will stop it early if needed)
+  epochs: 120                # Adjusted to 120 to balance accuracy and 10-12 hour time limit
   batch_size: 16              # Keeping your memory constraint
   
   # --- Advanced YOLO Hyperparameters ---
   yolo_kwargs:
     # 1. OPTIMIZER & LEARNING RATE (Crucial for Batch Size 8)
     optimizer: AdamW         # SGD fails with batch size 8. AdamW is mandatory here.
-    lr0: 0.002               # Lowered to 0.001 for AdamW stability
+    lr0: 0.001               # Lowered to 0.001 for AdamW stability
     weight_decay: 0.0005     # Standard penalty to prevent overfitting
     warmup_epochs: 3.0       # Allows AdamW to safely build up momentum
     cos_lr: true             # Cosine learning rate scheduler helps squeeze out final accuracy
@@ -30,16 +30,24 @@ training:
     box: 7.5
     cls: 0.5
     dfl: 1.5
-    # fl_gamma: 1.5            # Focal Loss: Forces the model to pay extra attention to 'Broken' (1602) to match 'Scratch' (3595)
+    fl_gamma: 1.5            # Focal Loss: Forces the model to pay extra attention to 'Broken' (1602) to match 'Scratch' (3595)
 
     # 3. HEAVY AUGMENTATIONS (The secret to >90% accuracy)
     mosaic: 1.0              # Combines 4 images into 1. Vital for YOLO.
     copy_paste: 0.3          # MAGIC for segmentation: cuts damage polygons and pastes them on healthy cars
     mixup: 0.15              # Blends two images together to force robust feature learning
     degrees: 10.0            # Slight rotations (cars are photographed at varying angles)
+    scale: 0.5               # Zoom in/out to handle varied damage sizes
+    perspective: 0.0005      # 3D perspective distortion for varied camera angles
     hsv_s: 0.7               # Varies color saturation heavily
     hsv_v: 0.4               # Varies lighting/exposure heavily (prevents failing in dark/bright shadows)
     fliplr: 0.5              # Flips images left/right
-
+    
+    # Validation & Saving Options
+    val: true                                   # Ensure validation runs during training
+    save_json: true                             # Save validation results in COCO JSON format
+    save_txt: true                              # Save validation predictions to .txt files
+    save_conf: true                             # Include confidence scores in saved .txt files
+    
 output:
-  runs_dir: runs/damage_yolo26m_cardd_in3class
+  runs_dir: runs/damage_yolo11m_cardd_in3class
