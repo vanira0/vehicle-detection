@@ -7,7 +7,7 @@ model:
   weights: yolo11n-seg.pt
 
 data:
-  yaml_path: rf_ds_vehicle_seg-1/data.yaml
+  yaml_path: rf_ds_vehicle_seg-4/data.yaml
   image_size: 640
 
 training:
@@ -20,3 +20,6 @@ training:
     patience: 10
     cos_lr: true
     mosaic: 1.0
+
+output:
+  runs_dir: runs/vehicle_seg_auto

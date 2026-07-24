@@ -1,0 +1,46 @@
+base: ../base.yaml
+experiment_name: yolo11_angle_det_v1
+
+model:
+  name: yolo11_det              # Changed from _cls to _det
+  stage: angle
+  weights: yolo11s.pt           # Standard detection weights (removes the '-cls')
+
+data:
+  yaml_path: rf_ds_angle_final-1/data.yaml  # Points to the standard YOLO data.yaml file
+  image_size: 640                     # Increased to 640 (Standard for YOLO detection)
+  class_names: [
+    "front", "front-left", "front-right", "left", 
+    "rear", "rear-left", "rear-right", "right"
+  ]
+
+training:
+  epochs: 100                   # 100 epochs is a good baseline for detection
+  batch_size: 16                # 16 is perfect for 640x640 detection on limited hardware
+  optimizer:
+    lr: 0.01                    # YOLO detection default learning rate
+  
+  yolo_kwargs:
+    optimizer: auto             # Let YOLO auto-select the best optimizer for detection
+    patience: 50                # Increased patience (detection takes longer to converge)
+    
+    # ---------------------------------------------------------
+    # CRITICAL Augmentation Settings (The "Flip Trap")
+    # ---------------------------------------------------------
+    fliplr: 0.0                 # STRICTLY 0.0: Prevents 'front-left' from becoming 'front-right'
+    flipud: 0.0                 # STRICTLY 0.0: Prevents upside-down cars
+    
+    # ---------------------------------------------------------
+    # Standard Detection Augmentations
+    # ---------------------------------------------------------
+    mosaic: 1.0                 # Turned ON: Highly recommended for YOLO object detection
+    mixup: 0.1                  # Slight mixup helps prevent overfitting
+    hsv_h: 0.015                # Slight Hue adjustment
+    hsv_s: 0.7                  # Saturation adjustment
+    hsv_v: 0.4                  # Value/Brightness adjustment (glare/night simulation)
+    degrees: 5.0                # Slight rotation (+/- 5 degrees)
+    translate: 0.1              # Slight shifting in frame
+    scale: 0.5                  # Zooming in/out
+
+output:
+  runs_dir: runs/damage_angle_auto

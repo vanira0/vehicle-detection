@@ -1,6 +1,6 @@
 _base_: ../base.yaml
 
-experiment_name: yolo11m_damage_3class_tuned
+experiment_name: yolo11m_damage_auto
 
 model:
   name: yolo11_seg
@@ -8,9 +8,9 @@ model:
   weights: yolo11m-seg.pt
 
 data:
-  yaml_path: vehicle_damage_cardd-_dup-1/data.yaml
+  yaml_path: /data.yaml
   image_size: 800
-  class_names: ['Broken', 'Dent', 'Scratch']
+  class_names: ['dent', 'scratch', 'crack', 'shattered', 'lamp_broken', 'tire_flat']
 
 training:
   epochs: 120                # Adjusted to 120 to balance accuracy and 10-12 hour time limit
@@ -19,10 +19,10 @@ training:
   # --- Advanced YOLO Hyperparameters ---
   yolo_kwargs:
     # 1. OPTIMIZER & LEARNING RATE (Crucial for Batch Size 8)
-    optimizer: AdamW         # SGD fails with batch size 8. AdamW is mandatory here.
-    lr0: 0.001               # Lowered to 0.001 for AdamW stability
-    weight_decay: 0.0005     # Standard penalty to prevent overfitting
-    warmup_epochs: 3.0       # Allows AdamW to safely build up momentum
+    optimizer: auto         # SGD fails with batch size 8. AdamW is mandatory here.
+    # lr0: 0.001               # Lowered to 0.001 for AdamW stability
+    # weight_decay: 0.0005     # Standard penalty to prevent overfitting
+    # warmup_epochs: 3.0       # Allows AdamW to safely build up momentum
     cos_lr: true             # Cosine learning rate scheduler helps squeeze out final accuracy
     patience: 30             # Increased from 10. Instance segmentation needs more time to plateau.
 
@@ -50,4 +50,4 @@ training:
     save_conf: true                             # Include confidence scores in saved .txt files
     
 output:
-  runs_dir: runs/damage_yolo11m_cardd_in3class
+  runs_dir: runs/damage_yolo11m_cardd_auto
