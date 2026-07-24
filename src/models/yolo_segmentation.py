@@ -126,7 +126,7 @@ class YOLO11SegmentationWrapper(BaseDetector):
         Here we initialize the YOLO model from a weight file (e.g. 'yolo11n-seg.pt').
         """
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        weights = getattr(model_config, "weights", "yolo11n-seg.pt")
+        weights = getattr(model_config, "checkpoint", getattr(model_config, "weights", "yolo11n-seg.pt"))
         # weights = _resolve_weights_path(weights, project_root)
         self._model = YOLO(weights)
         

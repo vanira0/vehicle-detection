@@ -142,7 +142,8 @@ class Orchestrator:
                         "area_ratio": round(float(area_ratio), 3),
                     }
                     if len(damage_boxes) > i:
-                        best_match["damage_box"] = damage_boxes[i]
+                        box = damage_boxes[i]
+                        best_match["damage_box"] = box.tolist() if hasattr(box, "tolist") else box
 
             if best_match:
                 # Build human-readable description
