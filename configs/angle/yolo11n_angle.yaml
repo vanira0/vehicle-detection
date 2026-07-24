@@ -2,7 +2,7 @@ base: ../base.yaml
 experiment_name: yolo11_angle_det_v1
 
 model:
-  name: yolo11_det              # Changed from _cls to _det
+  name: yolo11n_cls_angle_classifier              # Changed from _cls to _det
   stage: angle
   weights: yolo11s.pt           # Standard detection weights (removes the '-cls')
 
