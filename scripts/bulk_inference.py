@@ -126,6 +126,7 @@ def load_model(config_path, checkpoint_path, device):
         if loaded_names is not None:
             yolo_model.model.names = loaded_names
         model_wrapper._yolo_model = yolo_model
+        model_wrapper._model = yolo_model
         model = yolo_model.model.to(device)
         model.eval()
     else:

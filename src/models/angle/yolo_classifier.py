@@ -17,12 +17,14 @@ class YOLO11ClassificationWrapper(BaseClassifier):
         if YOLO is None:
             raise ImportError("Ultralytics package is missing. Please install it.")
         self._model = None
+        self._yolo_model = None
 
     def build(self, model_config: Config) -> nn.Module:
         variant = getattr(model_config, "backbone", "yolo11n-cls")
         pretrained = getattr(model_config, "pretrained", True)
         weights = f"{variant}.pt" if pretrained else f"{variant}.yaml"
         self._model = YOLO(weights)
+        self._yolo_model = self._model
         return self._model.model
 
     def train_native(self, config: Config):
@@ -60,18 +62,43 @@ class YOLO11ClassificationWrapper(BaseClassifier):
         # Merge any custom kwargs provided by the user
         train_args.update(yolo_kwargs)
 
-        results = self._model.train(**train_args)
+        yolo = self._model or self._yolo_model
+        if yolo is None:
+            raise RuntimeError("YOLO model instance not initialized for training.")
+        results = yolo.train(**train_args)
         return results
 
     def compute_loss(self, model, images, labels):
         raise NotImplementedError("YOLO11 uses native training. Call train_native().")
 
     def predict(self, model, image):
-        results = self._model.predict(image, verbose=False)
+        yolo_obj = self._model if self._model is not None else getattr(self, "_yolo_model", None)
+        if yolo_obj is None and hasattr(model, "predict"):
+            yolo_obj = model
+        if yolo_obj is None:
+            raise RuntimeError("No YOLO model instance found in wrapper for prediction.")
+
+        if isinstance(image, torch.Tensor) and image.dim() == 3:
+            image = image.unsqueeze(0)
+
+        results = yolo_obj.predict(image, verbose=False)
         result = results[0]
-        predicted_class = result.probs.top1
-        confidence = result.probs.top1conf.item()
-        probs = result.probs.data.cpu().tolist()
+
+        if hasattr(result, "probs") and result.probs is not None:
+            predicted_class = int(result.probs.top1)
+            confidence = float(result.probs.top1conf.item())
+            probs = result.probs.data.cpu().tolist() if hasattr(result.probs.data, "cpu") else []
+        elif hasattr(result, "boxes") and result.boxes is not None and len(result.boxes) > 0:
+            import numpy as np
+            confidences = result.boxes.conf.cpu().numpy()
+            best_idx = int(np.argmax(confidences))
+            predicted_class = int(result.boxes.cls[best_idx].cpu().item())
+            confidence = float(confidences[best_idx])
+            probs = []
+        else:
+            predicted_class = 0
+            confidence = 0.0
+            probs = []
 
         return {
             "predicted_class": predicted_class,

@@ -89,6 +89,7 @@ class ConfigurablePipeline:
             model_wrapper = get_model(model_name)()
             yolo_model = YOLO(checkpoint_path)
             model_wrapper._yolo_model = yolo_model
+            model_wrapper._model = yolo_model
             model = yolo_model.model.to(self.device)
             model.eval()
             self.logger.info(f"Loaded {name} YOLO model: {model_name}")
