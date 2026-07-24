@@ -8,6 +8,7 @@ model:
 
 data:
   yaml_path: rf_ds_angle_final-1/data.yaml  # Points to the standard YOLO data.yaml file
+  root: rf_ds_angle_final-1
   image_size: 640                     # Increased to 640 (Standard for YOLO detection)
   class_names: [
     "front", "front-left", "front-right", "left", 
