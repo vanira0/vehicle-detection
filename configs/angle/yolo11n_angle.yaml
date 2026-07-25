@@ -25,7 +25,7 @@ training:
     optimizer: auto             # Let YOLO auto-select the best optimizer for detection
     patience: 50                # Increased patience (detection takes longer to converge)
     task: detect                # Explicitly set task to detect
-    # data: rf_ds_angle_final-1/data.yaml # Point directly to the detection data.yaml
+    data: rf_ds_angle_final-1/data.yaml # Point directly to the detection data.yaml
     
     # ---------------------------------------------------------
     # CRITICAL Augmentation Settings (The "Flip Trap")
