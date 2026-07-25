@@ -543,14 +543,19 @@ def main():
                         angle_classes = None
                         for m in pipeline.models:
                             if m["name"] == "angle":
-                                angle_classes = m.get("config", {}).get("data.class_names")
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    angle_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    angle_classes = m.get("config", {}).get("data.class_names")
                                 break
                         
                         class_name = str(pred_class)
                         if angle_classes is not None:
                             try:
                                 pred_class_idx = int(pred_class)
-                                if 0 <= pred_class_idx < len(angle_classes):
+                                if isinstance(angle_classes, dict) and pred_class_idx in angle_classes:
+                                    class_name = angle_classes[pred_class_idx]
+                                elif isinstance(angle_classes, list) and 0 <= pred_class_idx < len(angle_classes):
                                     class_name = angle_classes[pred_class_idx]
                             except (ValueError, TypeError):
                                 pass
