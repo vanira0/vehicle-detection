@@ -117,8 +117,8 @@ def _compute_box_iou(box1, box2) -> float:
     return inter / max(union, 1e-6)
 
 
-def _compute_mask_iou(mask1, mask2) -> float:
-    """Compute IoU between two binary masks."""
+def _compute_mask_overlap(mask1, mask2) -> float:
+    """Compute how much of mask2 is covered by mask1 (Intersection over mask2 area)."""
     mask1 = mask1.astype(bool)
     mask2 = mask2.astype(bool)
     if mask1.shape != mask2.shape:
@@ -127,8 +127,8 @@ def _compute_mask_iou(mask1, mask2) -> float:
         mask1 = cv2.resize(mask1.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
         mask2 = cv2.resize(mask2.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
     intersection = np.logical_and(mask1, mask2).sum()
-    union = np.logical_or(mask1, mask2).sum()
-    return float(intersection / max(union, 1e-6))
+    area2 = mask2.sum()
+    return float(intersection / max(area2, 1e-6))
 
 
 def _get_damaged_part_indices(findings, damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=None):
@@ -150,8 +150,11 @@ def _get_damaged_part_indices(findings, damage_ctx, parts_ctx, overlap_ratio_thr
 
     if d_masks is not None and p_masks is not None and len(d_masks) > 0 and len(p_masks) > 0:
         for pi, p_mask in enumerate(p_masks):
-            for d_mask in d_masks:
-                if _compute_mask_iou(p_mask, d_mask) > 0.01:
+            for di, d_mask in enumerate(d_masks):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+                if _compute_mask_overlap(p_mask, d_mask) >= overlap_ratio_threshold:
                     damaged_part_indices.add(pi)
                     break
 
@@ -195,7 +198,7 @@ def _get_damage_part_pairs(damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, c
                 score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
                 if score < confidence_threshold:
                     continue
-                if _compute_mask_iou(p_mask, d_mask) > 0.01:
+                if _compute_mask_overlap(p_mask, d_mask) >= overlap_ratio_threshold:
                     pairs.append((pi, di))
 
     elif d_boxes is not None and p_boxes is not None and len(d_boxes) > 0 and len(p_boxes) > 0:
