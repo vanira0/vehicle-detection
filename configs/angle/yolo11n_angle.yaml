@@ -5,6 +5,7 @@ model:
   name: yolo11n_cls_angle_classifier              # Changed from _cls to _det
   stage: angle
   weights: yolo11s.pt           # Standard detection weights (removes the '-cls')
+  backbone: yolo11s             # CRITICAL: Wrapper reads 'backbone', not 'weights'
 
 data:
   yaml_path: rf_ds_angle_final-1/data.yaml  # Points to the standard YOLO data.yaml file
