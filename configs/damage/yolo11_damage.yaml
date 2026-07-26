@@ -8,7 +8,7 @@ model:
   weights: yolo11m-seg.pt
 
 data:
-  yaml_path: /data.yaml
+  yaml_path: rf_ds_cardd-1/data.yaml
   image_size: 800
   class_names: ['dent', 'scratch', 'crack', 'shattered', 'lamp_broken', 'tire_flat']
 
@@ -30,7 +30,7 @@ training:
     box: 7.5
     cls: 0.5
     dfl: 1.5
-    fl_gamma: 1.5            # Focal Loss: Forces the model to pay extra attention to 'Broken' (1602) to match 'Scratch' (3595)
+    # fl_gamma: 1.5            # Focal Loss: Forces the model to pay extra attention to 'Broken' (1602) to match 'Scratch' (3595)
 
     # 3. HEAVY AUGMENTATIONS (The secret to >90% accuracy)
     mosaic: 1.0              # Combines 4 images into 1. Vital for YOLO.
@@ -44,10 +44,10 @@ training:
     fliplr: 0.5              # Flips images left/right
     
     # Validation & Saving Options
-    val: true                                   # Ensure validation runs during training
-    save_json: true                             # Save validation results in COCO JSON format
-    save_txt: true                              # Save validation predictions to .txt files
-    save_conf: true                             # Include confidence scores in saved .txt files
+    # val: true                                   # Ensure validation runs during training
+    # save_json: true                             # Save validation results in COCO JSON format
+    # save_txt: true                              # Save validation predictions to .txt files
+    # save_conf: true                             # Include confidence scores in saved .txt files
     
 output:
   runs_dir: runs/damage_yolo11m_cardd_auto

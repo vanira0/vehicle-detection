@@ -135,8 +135,13 @@ class ConfigurablePipeline:
             wrapper = m["wrapper"]
             
             if isinstance(wrapper, BaseClassifier):
-                with torch.no_grad():
-                    res = wrapper.predict(model, class_image)
+                if hasattr(wrapper, "_yolo_model"):
+                    import cv2
+                    img_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+                    res = wrapper.predict(model, img_bgr)
+                else:
+                    with torch.no_grad():
+                        res = wrapper.predict(model, class_image)
                 context[name] = res
                 result[name] = res
                 
