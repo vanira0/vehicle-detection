@@ -315,7 +315,7 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
         return
 
 
-def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list):
+def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list, angle_name: str = ""):
     """Append damaged parts to consolidated CSV."""
     if not pairs:
         return
@@ -325,7 +325,6 @@ def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict,
     # Get class names
     part_classes = None
     damage_classes = None
-    angle_classes = None
     for m in pipeline_models:
         if m["name"] == "parts":
             if hasattr(m.get("wrapper", None), "_yolo_model"):
@@ -337,28 +336,6 @@ def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict,
                 damage_classes = m["wrapper"]._yolo_model.names
             else:
                 damage_classes = m.get("config", {}).get("data.class_names")
-        elif m["name"] == "angle":
-            if hasattr(m.get("wrapper", None), "_yolo_model"):
-                angle_classes = m["wrapper"]._yolo_model.names
-            else:
-                angle_classes = m.get("config", {}).get("data.class_names")
-
-    angle_name = ""
-    if angle_ctx and "predicted_class" in angle_ctx:
-        pred_class = angle_ctx["predicted_class"]
-        angle_name = str(pred_class)
-        if angle_classes is not None:
-            try:
-                pred_class_idx = int(pred_class)
-                if isinstance(angle_classes, dict) and pred_class_idx in angle_classes:
-                    angle_name = angle_classes[pred_class_idx]
-                elif isinstance(angle_classes, dict) and pred_class in angle_classes:
-                    angle_name = angle_classes[pred_class]
-                elif isinstance(angle_classes, list) and 0 <= pred_class_idx < len(angle_classes):
-                    angle_name = angle_classes[pred_class_idx]
-            except (ValueError, TypeError):
-                if isinstance(angle_classes, dict) and pred_class in angle_classes:
-                    angle_name = angle_classes[pred_class]
 
     d_boxes = damage_ctx.get("boxes", [])
     d_labels = damage_ctx.get("labels", [])
@@ -627,7 +604,6 @@ def main():
                     findings = result.get("findings", [])
                     damage_ctx = context.get("damage", {})
                     parts_ctx = context.get("parts", {})
-                    angle_ctx = context.get("angle", {})
                     damaged_part_indices = _get_damaged_part_indices(
                         findings,
                         damage_ctx,
@@ -643,7 +619,7 @@ def main():
                         confidence_threshold=pipeline.confidence_threshold,
                     )
                     append_damaged_parts_csv(
-                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models
+                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models, angle_name
                     )
 
 
