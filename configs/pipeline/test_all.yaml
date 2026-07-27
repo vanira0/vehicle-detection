@@ -13,6 +13,7 @@ models:
   - name: "damage"
     model_name: "yolo11_seg"
     checkpoint: "runs/cardd_y11m/trained.pt" # Update with actual path
+    # checkpoint: "runs/yolo11m_damage_auto/best.pt"
     confidence_threshold: 0.3
 
   - name: "parts"

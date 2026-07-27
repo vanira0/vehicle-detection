@@ -250,7 +250,7 @@ def init_csv_files(models, output_dir: str):
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "image_name", "part_name", "part_score", "part_x1", "part_y1", "part_x2", "part_y2",
+            "image_name", "angle", "part_name", "part_score", "part_x1", "part_y1", "part_x2", "part_y2",
             "damage_name", "damage_score", "damage_x1", "damage_y1", "damage_x2", "damage_y2"
         ])
 
@@ -278,7 +278,9 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
                 if class_names is not None:
                     try:
                         idx = int(pred_class)
-                        if 0 <= idx < len(class_names):
+                        if isinstance(class_names, dict) and idx in class_names:
+                            class_name = class_names[idx]
+                        elif isinstance(class_names, list) and 0 <= idx < len(class_names):
                             class_name = class_names[idx]
                     except (ValueError, TypeError):
                         pass
@@ -302,12 +304,18 @@ def append_to_csv(model_name: str, image_name: str, context_data: dict, output_d
                 box = boxes[i]
                 label = int(labels[i])
                 class_name = ""
-                if class_names is not None and 0 <= label < len(class_names):
-                    class_name = class_names[label]
+                if class_names is not None:
+                    if isinstance(class_names, dict) and label in class_names:
+                        class_name = class_names[label]
+                    elif isinstance(class_names, list) and 0 <= label < len(class_names):
+                        class_name = class_names[label]
+                
+                score = float(scores[i]) if i < len(scores) else 1.0
+                writer.writerow([image_name, label, class_name, score, box[0], box[1], box[2], box[3]])
         return
 
 
-def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list):
+def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list, angle_name: str = ""):
     """Append damaged parts to consolidated CSV."""
     if not pairs:
         return
@@ -365,7 +373,7 @@ def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict,
                     d_name = damage_classes[d_label]
                     
             writer.writerow([
-                image_name, 
+                image_name, angle_name,
                 p_name, p_score, p_box[0], p_box[1], p_box[2], p_box[3],
                 d_name, d_score, d_box[0], d_box[1], d_box[2], d_box[3]
             ])
@@ -526,7 +534,11 @@ def main():
                 for m in pipeline.models:
                     name = m["name"]
                     if name in context:
-                        class_names = m.get("config", {}).get("data.class_names")
+                        class_names = None
+                        if hasattr(m.get("wrapper"), "_yolo_model"):
+                            class_names = m["wrapper"]._yolo_model.names
+                        else:
+                            class_names = m.get("config", {}).get("data.class_names")
                         append_to_csv(name, image_name, context[name], args.output_dir, class_names)
                         # append_to_combined_csv(name, image_name, context[name], args.output_dir, class_names)
                 
@@ -538,6 +550,7 @@ def main():
                     img_bgr = cv2.cvtColor(context["image_rgb"], cv2.COLOR_RGB2BGR)
                     
                     # Draw angle
+                    angle_name = ""
                     if "angle" in result and "predicted_class" in result["angle"]:
                         pred_class = result['angle']['predicted_class']
                         angle_classes = None
@@ -560,8 +573,32 @@ def main():
                             except (ValueError, TypeError):
                                 pass
                                 
+                        angle_name = class_name
                         angle_text = f"Angle: {class_name}"
                         cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                    elif "angle" in context and "predicted_class" in context["angle"]:
+                        pred_class = context['angle']['predicted_class']
+                        angle_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "angle":
+                                if hasattr(m.get("wrapper"), "_yolo_model"):
+                                    angle_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    angle_classes = m.get("config", {}).get("data.class_names")
+                                break
+                        
+                        class_name = str(pred_class)
+                        if angle_classes is not None:
+                            try:
+                                pred_class_idx = int(pred_class)
+                                if isinstance(angle_classes, dict) and pred_class_idx in angle_classes:
+                                    class_name = angle_classes[pred_class_idx]
+                                elif isinstance(angle_classes, list) and 0 <= pred_class_idx < len(angle_classes):
+                                    class_name = angle_classes[pred_class_idx]
+                            except (ValueError, TypeError):
+                                pass
+                                
+                        angle_name = class_name
 
 
                     findings = result.get("findings", [])
@@ -582,7 +619,7 @@ def main():
                         confidence_threshold=pipeline.confidence_threshold,
                     )
                     append_damaged_parts_csv(
-                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models
+                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models, angle_name
                     )
 
 
