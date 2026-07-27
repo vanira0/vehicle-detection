@@ -23,6 +23,27 @@ import models.vehicle
 from .orchestrator import Orchestrator
 
 
+def _get_class_names(pipeline_models: list, model_name: str) -> Optional[Any]:
+    for m in pipeline_models:
+        if m["name"] == model_name:
+            if hasattr(m["wrapper"], "_yolo_model"):
+                return m["wrapper"]._yolo_model.names
+            if hasattr(m.get("config", None), "get"):
+                return m["config"].get("data.class_names")
+            if isinstance(m.get("config", None), dict):
+                return m["config"].get("data", {}).get("class_names")
+    return None
+
+
+def _get_class_name(classes: Any, label: int) -> str:
+    if classes is not None:
+        if isinstance(classes, dict) and label in classes:
+            return str(classes[label])
+        elif isinstance(classes, list) and 0 <= label < len(classes):
+            return str(classes[label])
+    return str(label)
+
+
 class ConfigurablePipeline:
     def __init__(self, config_path: str):
         self.logger = setup_logger("configurable_pipeline")
@@ -190,9 +211,21 @@ class ConfigurablePipeline:
                         result["status"] = "no_vehicle_found"
                         break
 
+        # Resolve angle name if predicted
+        angle_name = ""
+        if "angle" in context and isinstance(context["angle"], dict):
+            angle_res = context["angle"]
+            classes = _get_class_names(self.models, "angle")
+            if "predicted_class" in angle_res:
+                pred_class = angle_res["predicted_class"]
+                angle_name = _get_class_name(classes, int(pred_class)) if str(pred_class).isdigit() else str(pred_class)
+            elif "labels" in angle_res and len(angle_res["labels"]) > 0:
+                pred_class = angle_res["labels"][0]
+                angle_name = _get_class_name(classes, int(pred_class))
+
         # Post-processors execution
         if self.orchestrator and "damage" in context and "parts" in context:
-            findings = self.orchestrator.map_damage_to_parts(context["damage"], context["parts"])
+            findings = self.orchestrator.map_damage_to_parts(context["damage"], context["parts"], angle_name=angle_name)
             result["findings"] = findings
             if findings:
                 result["status"] = "damaged"
