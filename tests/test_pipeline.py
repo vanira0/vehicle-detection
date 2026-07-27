@@ -64,8 +64,42 @@ class TestOrchestrator:
 
         assert len(findings) == 1
         assert findings[0]["damage_type"] == "scratch"
-        assert findings[0]["car_part"] == "hood"
+        assert findings[0]["body_part"] == ["hood"]
         assert findings[0]["overlap_score"] > 0.3
+
+    def test_multiple_parts_single_damage(self):
+        """Test that a single damage overlapping multiple parts produces one finding with a list of parts."""
+        h, w = 100, 100
+
+        # Create damage mask covering top half
+        damage_mask = np.zeros((h, w), dtype=np.uint8)
+        damage_mask[:50, :] = 1
+
+        # Create part mask 1 covering top-left
+        part_mask1 = np.zeros((h, w), dtype=np.uint8)
+        part_mask1[:50, :50] = 1
+
+        # Create part mask 2 covering top-right
+        part_mask2 = np.zeros((h, w), dtype=np.uint8)
+        part_mask2[:50, 50:] = 1
+
+        damage_preds = {
+            "masks": np.array([damage_mask]),
+            "labels": np.array([1]),  # scratch
+            "scores": np.array([0.9]),
+        }
+        part_preds = {
+            "masks": np.array([part_mask1, part_mask2]),
+            "labels": np.array([1, 2]),  # indexes 1 and 2 in part_classes
+            "scores": np.array([0.85, 0.80]),
+        }
+
+        findings = self.orchestrator.map_damage_to_parts(damage_preds, part_preds)
+
+        assert len(findings) == 1
+        assert findings[0]["damage_type"] == "scratch"
+        assert isinstance(findings[0]["body_part"], list)
+        assert len(findings[0]["body_part"]) == 2
 
     def test_no_overlap(self):
         """Non-overlapping masks should produce no findings."""

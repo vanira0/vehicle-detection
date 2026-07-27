@@ -66,9 +66,9 @@ class Orchestrator:
 
         Returns:
             List of finding dicts, each containing:
-                - damage, damage_type: str
-                - corr part, corr_part, car_part, body_part, bodyPart: str
-                - angle, angle_name: str
+                - damage_type: str
+                - body_part: list[str]
+                - angle: str
                 - severity: str
                 - damage_confidence: float
                 - part_confidence: float
@@ -123,8 +123,7 @@ class Orchestrator:
             else:
                 d_area = 1.0
 
-            matched_any = False
-
+            matches = []
             for j in range(num_parts):
                 p_label = int(part_labels[j]) if j < len(part_labels) else 0
                 p_score = float(part_scores[j]) if j < len(part_scores) else 1.0
@@ -141,35 +140,19 @@ class Orchestrator:
                     continue
 
                 if overlap >= self.iou_threshold:
-                    matched_any = True
                     area_ratio = d_area / max(p_area, 1)
-                    severity = self._classify_severity(area_ratio)
                     part_name_str = self._get_class_name(p_label, self.part_classes)
-
-                    match_entry = {
-                        "damage_index": i,
+                    matches.append({
                         "part_index": j,
-                        "damage_type": damage_type_str,
-                        "body_part": part_name_str,
-                        "angle": angle_name or "",
-                        "severity": severity,
-                        "damage_confidence": round(d_score, 3),
-                        "part_confidence": round(p_score, 3),
-                        "overlap_score": round(overlap, 3),
-                        "damage_area_px": int(d_area),
-                        "area_ratio": round(float(area_ratio), 3),
-                    }
-                    if d_box is not None:
-                        match_entry["damage_box"] = d_box.tolist() if hasattr(d_box, "tolist") else list(d_box)
+                        "part_name": part_name_str,
+                        "overlap": overlap,
+                        "p_score": p_score,
+                        "p_area": p_area,
+                        "area_ratio": area_ratio,
+                    })
 
-                    match_entry["description"] = (
-                        f"{severity.title()} {damage_type_str} "
-                        f"detected on the {part_name_str.replace('_', ' ').title()}"
-                    )
-                    findings.append(match_entry)
-
-            # If no part met the threshold, fallback to the best overlapping part > 0.05 or 'unspecified'
-            if not matched_any:
+            # If no part met the threshold, fallback to the best overlapping part > 0.05
+            if not matches:
                 best_j = -1
                 best_overlap = 0.0
                 for j in range(num_parts):
@@ -195,36 +178,60 @@ class Orchestrator:
                     else:
                         p_area = 1.0
                     area_ratio = d_area / max(p_area, 1)
-                    severity = self._classify_severity(area_ratio)
                     part_name_str = self._get_class_name(p_label, self.part_classes)
+                    matches.append({
+                        "part_index": best_j,
+                        "part_name": part_name_str,
+                        "overlap": best_overlap,
+                        "p_score": p_score,
+                        "p_area": p_area,
+                        "area_ratio": area_ratio,
+                    })
                 else:
-                    best_j = -1
-                    best_overlap = 0.0
-                    area_ratio = 0.0
-                    severity = "minor"
-                    part_name_str = "unspecified"
-                    p_score = 0.0
+                    continue
 
-                match_entry = {
-                    "damage_index": i,
-                    "part_index": best_j,
-                    "damage_type": damage_type_str,
-                    "body_part": part_name_str,
-                    "angle": angle_name or "",
-                    "severity": severity,
-                    "damage_confidence": round(d_score, 3),
-                    "part_confidence": round(p_score, 3),
-                    "overlap_score": round(best_overlap, 3),
-                    "damage_area_px": int(d_area),
-                    "area_ratio": round(float(area_ratio), 3),
-                }
-                if d_box is not None:
-                    match_entry["damage_box"] = d_box.tolist() if hasattr(d_box, "tolist") else list(d_box)
-                match_entry["description"] = (
-                    f"{severity.title()} {damage_type_str} "
-                    f"detected on the {part_name_str.replace('_', ' ').title()}"
-                )
-                findings.append(match_entry)
+            # Sort matching parts by overlap descending
+            matches.sort(key=lambda m: m["overlap"], reverse=True)
+            matched_part_names = []
+            for m in matches:
+                if m["part_name"] not in matched_part_names:
+                    matched_part_names.append(m["part_name"])
+
+            best_match = matches[0]
+            area_ratio = best_match["area_ratio"]
+            severity = self._classify_severity(area_ratio)
+
+            parts_readable_list = [p.replace("_", " ").title() for p in matched_part_names]
+            if len(parts_readable_list) == 1:
+                parts_str = parts_readable_list[0]
+            elif len(parts_readable_list) == 2:
+                parts_str = " and ".join(parts_readable_list)
+            else:
+                parts_str = ", ".join(parts_readable_list[:-1]) + f", and {parts_readable_list[-1]}"
+
+            description = (
+                f"{severity.title()} {damage_type_str} "
+                f"detected on the {parts_str}"
+            )
+
+            match_entry = {
+                "damage_index": i,
+                "part_index": best_match["part_index"],
+                "damage_type": damage_type_str,
+                "body_part": matched_part_names,
+                "angle": angle_name or "",
+                "severity": severity,
+                "damage_confidence": round(d_score, 3),
+                "part_confidence": round(best_match["p_score"], 3),
+                "overlap_score": round(best_match["overlap"], 3),
+                "damage_area_px": int(d_area),
+                "area_ratio": round(float(area_ratio), 3),
+                "description": description,
+            }
+            if d_box is not None:
+                match_entry["damage_box"] = d_box.tolist() if hasattr(d_box, "tolist") else list(d_box)
+
+            findings.append(match_entry)
 
         # Sort by severity (most severe first)
         severity_order = {"critical": 0, "severe": 1, "moderate": 2, "minor": 3}
