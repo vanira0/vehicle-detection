@@ -79,13 +79,8 @@ class ConfigurablePipeline:
         if any(p.get("name") == "damage_to_parts_orchestrator" for p in self.post_processors):
             iou_thresh = self.config.get("iou_threshold", 0.3)
             
-            damage_classes = None
-            part_classes = None
-            for m in self.models:
-                if m["name"] == "damage" and m["config"].get("data.class_names") is not None:
-                    damage_classes = m["config"].get("data.class_names")
-                if m["name"] == "parts" and m["config"].get("data.class_names") is not None:
-                    part_classes = m["config"].get("data.class_names")
+            damage_classes = _get_class_names(self.models, "damage")
+            part_classes = _get_class_names(self.models, "parts")
 
             self.orchestrator = Orchestrator(
                 iou_threshold=iou_thresh,

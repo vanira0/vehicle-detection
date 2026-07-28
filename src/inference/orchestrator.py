@@ -41,11 +41,7 @@ class Orchestrator:
             "dent", "scratch", "crack", "glass shatter", "lamp broken", "tire flat"
         ]
         self.part_classes = part_classes or [
-            "Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk",
-            "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window",
-            "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", 
-            "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper",
-            "Mirror", "Roof"
+            # "Quarter-panel", "Front-wheel", "Back-window", "Trunk", "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", "Mirror", "Roof"
         ]
 
     def map_damage_to_parts(
