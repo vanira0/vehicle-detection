@@ -1,0 +1,736 @@
+#!/usr/bin/env python
+"""
+Run the configurable inference pipeline on an image or a directory of images
+and export results to CSV.
+
+Usage:
+    # Single image
+    python scripts/infer_pipeline.py \
+        --pipeline-config configs/pipeline/test_all.yaml \
+        --input test_car.jpg \
+        --output-dir results/
+
+    # Directory of images
+    python scripts/infer_pipeline.py \
+        --pipeline-config configs/pipeline/test_all.yaml \
+        --input path/to/images_dir/ \
+        --output-dir results/
+"""
+
+import argparse
+import csv
+import json
+import os
+import sys
+import glob
+import numpy as np
+
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from inference.configurable_pipeline import ConfigurablePipeline
+from utils.logger import setup_logger
+from data.preprocessing import resize_image
+from utils.visualization import draw_bboxes, overlay_masks
+import cv2
+
+
+def resize_with_aspect_ratio_and_pad(image, target_size=512):
+    h, w = image.shape[:2]
+    
+    # Calculate the scaling factor to fit within the target square
+    scaling_factor = target_size / max(h, w)
+    new_w = int(w * scaling_factor)
+    new_h = int(h * scaling_factor)
+    
+    # Resize the image using INTER_AREA (best for shrinking)
+    resized_img = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    
+    # Create a solid black canvas of the target size
+    padded_img = np.zeros((target_size, target_size, 3), dtype=np.uint8)
+    
+    # Calculate top-left offsets to center the image on the canvas
+    x_offset = (target_size - new_w) // 2
+    y_offset = (target_size - new_h) // 2
+    
+    # Paste the resized image onto the center of the canvas
+    padded_img[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_img
+    
+    return padded_img
+
+
+def pipeline_preprocess(image_path, target_size=512, max_size_kb=400):
+    # 1. Load the original high-res image
+    img = cv2.imread(image_path)
+    if img is None:
+        raise FileNotFoundError("Image could not be loaded.")
+        
+    # 2. Resize and pad maintaining aspect ratio
+    processed_img = resize_with_aspect_ratio_and_pad(img, target_size=target_size)
+    
+    # 3. Dynamically compress to target file size (< 400KB)
+    quality = 95
+    while quality > 10:
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        result, encimg = cv2.imencode('.jpg', processed_img, encode_param)
+        
+        size_kb = len(encimg) / 1024
+        if size_kb <= max_size_kb:
+            # Decode back to matrix to feed into your inference pipeline
+            final_img = cv2.imdecode(encimg, cv2.IMREAD_COLOR)
+            return final_img, quality, size_kb
+            
+        quality -= 5
+        
+    raise ValueError("Could not compress below target size even at lowest JPEG quality.")
+
+
+def apply_clahe(image):
+    # Convert BGR to LAB color space
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to the L-channel
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    cl = clahe.apply(l)
+    
+    # Merge channels back and convert to BGR
+    limg = cv2.merge((cl, a, b))
+    enhanced_image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    return enhanced_image
+
+
+
+
+def _compute_box_iou(box1, box2) -> float:
+    """Compute IoU between two [x1, y1, x2, y2] boxes."""
+    ix1 = max(box1[0], box2[0])
+    iy1 = max(box1[1], box2[1])
+    ix2 = min(box1[2], box2[2])
+    iy2 = min(box1[3], box2[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter == 0.0:
+        return 0.0
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - inter
+    return inter / max(union, 1e-6)
+
+
+def _compute_mask_overlap(mask1, mask2) -> float:
+    """Compute how much of mask2 is covered by mask1 (Intersection over mask2 area)."""
+    mask1 = mask1.astype(bool)
+    mask2 = mask2.astype(bool)
+    if mask1.shape != mask2.shape:
+        target_h = max(mask1.shape[0], mask2.shape[0])
+        target_w = max(mask1.shape[1], mask2.shape[1])
+        mask1 = cv2.resize(mask1.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
+        mask2 = cv2.resize(mask2.astype(np.uint8), (target_w, target_h), interpolation=cv2.INTER_NEAREST).astype(bool)
+    intersection = np.logical_and(mask1, mask2).sum()
+    area2 = mask2.sum()
+    return float(intersection / max(area2, 1e-6))
+
+
+def _get_damaged_part_indices(findings, damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=None):
+    """Return part indices whose overlap with damage exceeds the requested area ratio."""
+    damaged_part_indices = set()
+
+    for finding in findings:
+        if "part_index" in finding:
+            damaged_part_indices.add(int(finding["part_index"]))
+
+    d_masks = damage_ctx.get("masks") if damage_ctx else None
+    p_masks = parts_ctx.get("masks") if parts_ctx else None
+    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
+    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
+    d_scores = damage_ctx.get("scores") if damage_ctx else None
+
+    if confidence_threshold is None:
+        confidence_threshold = 0.0
+
+    if d_masks is not None and p_masks is not None and len(d_masks) > 0 and len(p_masks) > 0:
+        for pi, p_mask in enumerate(p_masks):
+            for di, d_mask in enumerate(d_masks):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+                if _compute_mask_overlap(p_mask, d_mask) >= overlap_ratio_threshold:
+                    damaged_part_indices.add(pi)
+                    break
+
+    if d_boxes is not None and p_boxes is not None and len(d_boxes) > 0 and len(p_boxes) > 0:
+        for pi, p_box in enumerate(p_boxes):
+            for di, d_box in enumerate(d_boxes):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+
+                damage_area = max((d_box[2] - d_box[0]) * (d_box[3] - d_box[1]), 1e-6)
+                ix1 = max(p_box[0], d_box[0])
+                iy1 = max(p_box[1], d_box[1])
+                ix2 = min(p_box[2], d_box[2])
+                iy2 = min(p_box[3], d_box[3])
+                overlap_area = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+                overlap_ratio = overlap_area / damage_area
+                if overlap_ratio >= overlap_ratio_threshold:
+                    damaged_part_indices.add(pi)
+                    break
+
+    return damaged_part_indices
+
+
+def _get_damage_part_pairs(damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=None):
+    """Return a list of tuples (part_index, damage_index) that overlap."""
+    pairs = []
+    
+    d_masks = damage_ctx.get("masks") if damage_ctx else None
+    p_masks = parts_ctx.get("masks") if parts_ctx else None
+    d_boxes = damage_ctx.get("boxes") if damage_ctx else None
+    p_boxes = parts_ctx.get("boxes") if parts_ctx else None
+    d_scores = damage_ctx.get("scores") if damage_ctx else None
+
+    if confidence_threshold is None:
+        confidence_threshold = 0.0
+
+    if d_masks is not None and p_masks is not None and len(d_masks) > 0 and len(p_masks) > 0:
+        for pi, p_mask in enumerate(p_masks):
+            for di, d_mask in enumerate(d_masks):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+                if _compute_mask_overlap(p_mask, d_mask) >= overlap_ratio_threshold:
+                    pairs.append((pi, di))
+
+    elif d_boxes is not None and p_boxes is not None and len(d_boxes) > 0 and len(p_boxes) > 0:
+        for pi, p_box in enumerate(p_boxes):
+            for di, d_box in enumerate(d_boxes):
+                score = float(d_scores[di]) if d_scores is not None and di < len(d_scores) else 1.0
+                if score < confidence_threshold:
+                    continue
+
+                damage_area = max((d_box[2] - d_box[0]) * (d_box[3] - d_box[1]), 1e-6)
+                ix1 = max(p_box[0], d_box[0])
+                iy1 = max(p_box[1], d_box[1])
+                ix2 = min(p_box[2], d_box[2])
+                iy2 = min(p_box[3], d_box[3])
+                overlap_area = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+                overlap_ratio = overlap_area / damage_area
+                
+                # Also check intersection over part area, just in case damage is larger than part
+                part_area = max((p_box[2] - p_box[0]) * (p_box[3] - p_box[1]), 1e-6)
+                part_overlap_ratio = overlap_area / part_area
+                
+                if overlap_ratio >= overlap_ratio_threshold or part_overlap_ratio >= overlap_ratio_threshold:
+                    pairs.append((pi, di))
+
+    return pairs
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run configurable vehicle damage detection pipeline")
+    parser.add_argument("--pipeline-config", type=str, required=True, help="Path to pipeline YAML config")
+    parser.add_argument("--input", type=str, required=True, help="Path to input image or directory")
+    parser.add_argument("--output-dir", type=str, default="results", help="Directory to save CSVs and JSON")
+    return parser.parse_args()
+
+
+def init_csv_files(models, output_dir: str):
+    """Initialize CSV files with headers."""
+    for model_cfg in models:
+        name = model_cfg["name"]
+        csv_path = os.path.join(output_dir, f"{name}_predictions.csv")
+        
+        # We can't know the exact output format just from the config, but we can write headers on first append
+        # So we'll just clear the files here.
+        with open(csv_path, "w", newline="") as f:
+            pass
+
+    # Initialize consolidated CSV
+    csv_path = os.path.join(output_dir, "damaged_parts_consolidated.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "image_name", "angle", "part_name", "part_score", "part_x1", "part_y1", "part_x2", "part_y2",
+            "damage_name", "damage_score", "damage_x1", "damage_y1", "damage_x2", "damage_y2"
+        ])
+
+
+def append_to_csv(model_name: str, image_name: str, context_data: dict, output_dir: str, class_names: list = None):
+    """Append model predictions to CSV for a single image."""
+    csv_path = os.path.join(output_dir, f"{model_name}_predictions.csv")
+    
+    # Check if file is empty to write header
+    is_empty = os.path.getsize(csv_path) == 0 if os.path.exists(csv_path) else True
+
+    # Classification (e.g. angle, gatekeeper)
+    if "predicted_class" in context_data or "is_damaged" in context_data:
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            if is_empty:
+                if "predicted_class" in context_data:
+                    writer.writerow(["image_name", "predicted_class", "class_name", "confidence"])
+                elif "is_damaged" in context_data:
+                    writer.writerow(["image_name", "is_damaged", "confidence"])
+            
+            if "predicted_class" in context_data:
+                pred_class = context_data["predicted_class"]
+                class_name = ""
+                if class_names is not None:
+                    try:
+                        idx = int(pred_class)
+                        if isinstance(class_names, dict) and idx in class_names:
+                            class_name = class_names[idx]
+                        elif isinstance(class_names, list) and 0 <= idx < len(class_names):
+                            class_name = class_names[idx]
+                    except (ValueError, TypeError):
+                        pass
+                writer.writerow([image_name, pred_class, class_name, context_data.get("confidence", 0.0)])
+            elif "is_damaged" in context_data:
+                writer.writerow([image_name, context_data["is_damaged"], context_data.get("confidence", 0.0)])
+        return
+
+    # Detection/Segmentation (e.g. parts, damage)
+    if "boxes" in context_data and "labels" in context_data:
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            if is_empty:
+                writer.writerow(["image_name", "class_id", "class_name", "score", "box_x1", "box_y1", "box_x2", "box_y2"])
+            
+            boxes = context_data["boxes"]
+            labels = context_data["labels"]
+            scores = context_data.get("scores", [])
+            
+            for i in range(len(labels)):
+                box = boxes[i]
+                label = int(labels[i])
+                class_name = ""
+                if class_names is not None:
+                    if isinstance(class_names, dict) and label in class_names:
+                        class_name = class_names[label]
+                    elif isinstance(class_names, list) and 0 <= label < len(class_names):
+                        class_name = class_names[label]
+                
+                score = float(scores[i]) if i < len(scores) else 1.0
+                writer.writerow([image_name, label, class_name, score, box[0], box[1], box[2], box[3]])
+        return
+
+
+def append_damaged_parts_csv(image_name: str, damage_ctx: dict, parts_ctx: dict, pairs: list, output_dir: str, pipeline_models: list, angle_name: str = ""):
+    """Append damaged parts to consolidated CSV."""
+    if not pairs:
+        return
+        
+    csv_path = os.path.join(output_dir, "damaged_parts_consolidated.csv")
+    
+    # Get class names
+    part_classes = None
+    damage_classes = None
+    for m in pipeline_models:
+        if m["name"] == "parts":
+            if hasattr(m.get("wrapper", None), "_yolo_model"):
+                part_classes = m["wrapper"]._yolo_model.names
+            else:
+                part_classes = m.get("config", {}).get("data.class_names")
+        elif m["name"] == "damage":
+            if hasattr(m.get("wrapper", None), "_yolo_model"):
+                damage_classes = m["wrapper"]._yolo_model.names
+            else:
+                damage_classes = m.get("config", {}).get("data.class_names")
+
+    d_boxes = damage_ctx.get("boxes", [])
+    d_labels = damage_ctx.get("labels", [])
+    d_scores = damage_ctx.get("scores", [])
+    
+    p_boxes = parts_ctx.get("boxes", [])
+    p_labels = parts_ctx.get("labels", [])
+    p_scores = parts_ctx.get("scores", [])
+    
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        for pi, di in pairs:
+            # Part info
+            p_box = p_boxes[pi] if pi < len(p_boxes) else [0,0,0,0]
+            p_label = int(p_labels[pi]) if pi < len(p_labels) else -1
+            p_score = float(p_scores[pi]) if pi < len(p_scores) else 1.0
+            
+            p_name = str(p_label)
+            if part_classes is not None:
+                if isinstance(part_classes, dict) and p_label in part_classes:
+                    p_name = part_classes[p_label]
+                elif isinstance(part_classes, list) and 0 <= p_label < len(part_classes):
+                    p_name = part_classes[p_label]
+                    
+            # Damage info
+            d_box = d_boxes[di] if di < len(d_boxes) else [0,0,0,0]
+            d_label = int(d_labels[di]) if di < len(d_labels) else -1
+            d_score = float(d_scores[di]) if di < len(d_scores) else 1.0
+            
+            d_name = str(d_label)
+            if damage_classes is not None:
+                if isinstance(damage_classes, dict) and d_label in damage_classes:
+                    d_name = damage_classes[d_label]
+                elif isinstance(damage_classes, list) and 0 <= d_label < len(damage_classes):
+                    d_name = damage_classes[d_label]
+                    
+            writer.writerow([
+                image_name, angle_name,
+                p_name, p_score, p_box[0], p_box[1], p_box[2], p_box[3],
+                d_name, d_score, d_box[0], d_box[1], d_box[2], d_box[3]
+            ])
+
+
+# def init_csv_files(models, output_dir: str):
+#     """Initialize per-model CSV files and one combined CSV."""
+#     for model_cfg in models:
+#         name = model_cfg["name"]
+#         csv_path = os.path.join(output_dir, f"{name}_predictions.csv")
+#         with open(csv_path, "w", newline="") as f:
+#             pass
+
+#     combined_csv_path = os.path.join(output_dir, "all_predictions.csv")
+#     with open(combined_csv_path, "w", newline="") as f:
+#         pass
+
+
+# def append_to_combined_csv(model_name: str, image_name: str, context_data: dict, output_dir: str, class_names: list = None):
+#     """Append one row per classification/detection into a single combined CSV."""
+#     csv_path = os.path.join(output_dir, "all_predictions.csv")
+#     is_empty = os.path.getsize(csv_path) == 0 if os.path.exists(csv_path) else True
+
+#     # Classification output: angle / gatekeeper
+#     if "predicted_class" in context_data or "is_damaged" in context_data:
+#         with open(csv_path, "a", newline="") as f:
+#             writer = csv.writer(f)
+#             if is_empty:
+#                 writer.writerow([
+#                     "image_name", "model_name", "predicted_class", "class_name",
+#                     "confidence", "class_id", "score", "box_x1", "box_y1", "box_x2", "box_y2"
+#                 ])
+
+#             pred_class = context_data.get("predicted_class")
+#             class_name = ""
+#             if class_names is not None:
+#                 try:
+#                     idx = int(pred_class)
+#                     if 0 <= idx < len(class_names):
+#                         class_name = class_names[idx]
+#                 except (ValueError, TypeError):
+#                     pass
+
+#             writer.writerow([
+#                 image_name, model_name, pred_class, class_name,
+#                 context_data.get("confidence", 0.0), "", "", "", "", "", ""
+#             ])
+#         return
+
+#     # Detection/segmentation output: parts / damage
+#     if "boxes" in context_data and "labels" in context_data:
+#         with open(csv_path, "a", newline="") as f:
+#             writer = csv.writer(f)
+#             if is_empty:
+#                 writer.writerow([
+#                     "image_name", "model_name", "predicted_class", "class_name",
+#                     "confidence", "class_id", "score", "box_x1", "box_y1", "box_x2", "box_y2"
+#                 ])
+
+#             boxes = context_data.get("boxes", [])
+#             labels = context_data.get("labels", [])
+#             scores = context_data.get("scores", [])
+
+#             for i in range(len(labels)):
+#                 box = boxes[i]
+#                 label = int(labels[i])
+#                 class_name = ""
+#                 if class_names is not None and 0 <= label < len(class_names):
+#                     class_name = class_names[label]
+
+#                 score = float(scores[i]) if i < len(scores) else 1.0
+#                 writer.writerow([
+#                     image_name, model_name, "", class_name, "",
+#                     label, score, float(box[0]), float(box[1]), float(box[2]), float(box[3])
+#                 ])
+#         return
+
+def main():
+    args = parse_args()
+    logger = setup_logger("infer_pipeline")
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # Determine inputs
+    image_paths = []
+    if os.path.isdir(args.input):
+        valid_exts = {".jpg", ".jpeg", ".png", ".bmp"}
+        for f in os.listdir(args.input):
+            if os.path.splitext(f.lower())[1] in valid_exts:
+                image_paths.append(os.path.join(args.input, f))
+        logger.info(f"Found {len(image_paths)} images in directory {args.input}")
+    elif os.path.isfile(args.input):
+        image_paths = [args.input]
+    else:
+        logger.error(f"Input path {args.input} is not a valid file or directory.")
+        sys.exit(1)
+
+    if not image_paths:
+        logger.warning("No images found to process.")
+        return
+
+    # Build pipeline
+    logger.info(f"Loading pipeline from: {args.pipeline_config}")
+    pipeline = ConfigurablePipeline(config_path=args.pipeline_config)
+    
+    # Initialize CSV files
+    init_csv_files(pipeline.config.get("models", []), args.output_dir)
+
+    jsonl_path = os.path.join(args.output_dir, "pipeline_results.jsonl")
+    
+    def default_serializer(obj):
+        if hasattr(obj, "tolist"):
+            return obj.tolist()
+        return str(obj)
+    
+    # Clear JSONL file
+    with open(jsonl_path, "w") as f:
+        pass
+
+    logger.info(f"Starting inference on {len(image_paths)} images...")
+    
+    total_time = 0
+    with open(jsonl_path, "a") as jsonl_file:
+        for idx, image_path in enumerate(image_paths, 1):
+            image_name = os.path.basename(image_path)
+            logger.info(f"[{idx}/{len(image_paths)}] Processing: {image_name}")
+            
+            try:
+                # Preprocess and Apply CLAHE
+                try:
+                    img, quality, size_kb = pipeline_preprocess(image_path, target_size=1024, max_size_kb=1024)
+                    logger.info(f"Compressed image to {size_kb:.2f}KB with quality {quality}")
+                except Exception as e:
+                    logger.error(f"Preprocessing failed for {image_name}: {e}")
+                    img = None
+
+                # apply clahe or not
+                if img is not None:
+                    clahe_img = apply_clahe(img)
+                    tmp_path = os.path.join(args.output_dir, "tmp_clahe.jpg")
+                    cv2.imwrite(tmp_path, clahe_img)
+                    pipeline_input = tmp_path
+                else:
+                    pipeline_input = image_path
+                
+                # pipeline_input = image_path
+                    
+                result = pipeline(pipeline_input)
+                result["image_path"] = image_path  # restore original path
+                
+                # Extract context for CSV export
+                context = result.pop("_context", {})
+                
+                # Update total time
+                total_time += result.get("inference_time_ms", 0)
+                
+                # Export to CSVs
+                for m in pipeline.models:
+                    name = m["name"]
+                    if name in context:
+                        class_names = None
+                        if hasattr(m.get("wrapper"), "_yolo_model"):
+                            class_names = m["wrapper"]._yolo_model.names
+                        else:
+                            class_names = m.get("config", {}).get("data.class_names")
+                        append_to_csv(name, image_name, context[name], args.output_dir, class_names)
+                        # append_to_combined_csv(name, image_name, context[name], args.output_dir, class_names)
+                
+                # Write to JSONL
+                jsonl_file.write(json.dumps(result, default=default_serializer) + "\n")
+                
+                # Visualize parts boxes and angle
+                if "image_rgb" in context:
+                    img_bgr = cv2.cvtColor(context["image_rgb"], cv2.COLOR_RGB2BGR)
+                    
+                    # Draw angle
+                    angle_name = ""
+                    if "angle" in result and "predicted_class" in result["angle"]:
+                        pred_class = result['angle']['predicted_class']
+                        angle_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "angle":
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    angle_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    angle_classes = m.get("config", {}).get("data.class_names")
+                                break
+                        
+                        class_name = str(pred_class)
+                        if angle_classes is not None:
+                            try:
+                                pred_class_idx = int(pred_class)
+                                if isinstance(angle_classes, dict) and pred_class_idx in angle_classes:
+                                    class_name = angle_classes[pred_class_idx]
+                                elif isinstance(angle_classes, list) and 0 <= pred_class_idx < len(angle_classes):
+                                    class_name = angle_classes[pred_class_idx]
+                            except (ValueError, TypeError):
+                                pass
+                                
+                        angle_name = class_name
+                        angle_text = f"Angle: {class_name}"
+                        cv2.putText(img_bgr, angle_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                    elif "angle" in context and "predicted_class" in context["angle"]:
+                        pred_class = context['angle']['predicted_class']
+                        angle_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "angle":
+                                if hasattr(m.get("wrapper"), "_yolo_model"):
+                                    angle_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    angle_classes = m.get("config", {}).get("data.class_names")
+                                break
+                        
+                        class_name = str(pred_class)
+                        if angle_classes is not None:
+                            try:
+                                pred_class_idx = int(pred_class)
+                                if isinstance(angle_classes, dict) and pred_class_idx in angle_classes:
+                                    class_name = angle_classes[pred_class_idx]
+                                elif isinstance(angle_classes, list) and 0 <= pred_class_idx < len(angle_classes):
+                                    class_name = angle_classes[pred_class_idx]
+                            except (ValueError, TypeError):
+                                pass
+                                
+                        angle_name = class_name
+
+
+                    findings = result.get("findings", [])
+                    damage_ctx = context.get("damage", {})
+                    parts_ctx = context.get("parts", {})
+                    damaged_part_indices = _get_damaged_part_indices(
+                        findings,
+                        damage_ctx,
+                        parts_ctx,
+                        overlap_ratio_threshold=0.7,
+                        confidence_threshold=pipeline.confidence_threshold,
+                    )
+                    
+                    damage_part_pairs = _get_damage_part_pairs(
+                        damage_ctx,
+                        parts_ctx,
+                        overlap_ratio_threshold=0.7,
+                        confidence_threshold=pipeline.confidence_threshold,
+                    )
+                    append_damaged_parts_csv(
+                        image_name, damage_ctx, parts_ctx, damage_part_pairs, args.output_dir, pipeline.models, angle_name
+                    )
+
+
+                    # Draw damaged parts as segmentation masks only when damage exists
+                    if "parts" in context and damage_ctx is not None and len(damage_ctx.get("boxes", [])) > 0:
+                        parts_context = context["parts"]
+                        boxes = parts_context.get("boxes")
+                        labels = parts_context.get("labels")
+                        scores = parts_context.get("scores")
+                        masks = parts_context.get("masks")
+                        
+                        part_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "parts":
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    part_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    part_classes = m.get("config", {}).get("data.class_names")
+                                break
+                                
+                        if boxes is not None and len(boxes) > 0:
+                            filtered_labels = []
+                            filtered_scores = []
+                            filtered_masks = []
+                            
+                            for i in range(len(boxes)):
+                                if i in damaged_part_indices:
+                                    name = str(labels[i])
+                                    if part_classes is not None:
+                                        if isinstance(part_classes, dict) and int(labels[i]) in part_classes:
+                                            name = part_classes[int(labels[i])]
+                                        elif isinstance(part_classes, list) and 0 <= int(labels[i]) < len(part_classes):
+                                            name = part_classes[int(labels[i])]
+                                    filtered_labels.append(name)
+                                    
+                                    if scores is not None and i < len(scores):
+                                        filtered_scores.append(scores[i])
+
+                                    if masks is not None and len(masks) > 0 and i < len(masks):
+                                        filtered_masks.append(masks[i])
+                                        
+                            if len(filtered_masks) > 0:
+                                img_h, img_w = img_bgr.shape[:2]
+                                resized_masks = []
+                                for mask in filtered_masks:
+                                    if mask.shape != (img_h, img_w):
+                                        mask = cv2.resize(
+                                            mask.astype(np.uint8), (img_w, img_h),
+                                            interpolation=cv2.INTER_NEAREST,
+                                        )
+                                    resized_masks.append(mask)
+                                img_bgr = overlay_masks(
+                                    img_bgr,
+                                    np.array(resized_masks),
+                                    filtered_labels,
+                                    np.array(filtered_scores) if filtered_scores else None,
+                                    alpha=0.35,
+                                    score_threshold=pipeline.confidence_threshold,
+                                )
+                               
+                    # Draw damage as bounding boxes
+                    if "damage" in context:
+                        damage_context = context["damage"]
+                        boxes = damage_context.get("boxes")
+                        labels = damage_context.get("labels")
+                        scores = damage_context.get("scores")
+                       
+                        damage_classes = None
+                        for m in pipeline.models:
+                            if m["name"] == "damage":
+                                if hasattr(m["wrapper"], "_yolo_model"):
+                                    damage_classes = m["wrapper"]._yolo_model.names
+                                else:
+                                    damage_classes = m.get("config", {}).get("data.class_names")
+                                break
+                                
+                        if boxes is not None and len(boxes) > 0:
+                            damage_labels_str = []
+                            for l in labels:
+                                name = str(l)
+                                if damage_classes is not None:
+                                    if isinstance(damage_classes, dict) and int(l) in damage_classes:
+                                        name = f"Damage: {damage_classes[int(l)]}"
+                                    elif isinstance(damage_classes, list) and 0 <= int(l) < len(damage_classes):
+                                        name = f"Damage: {damage_classes[int(l)]}"
+                                    else:
+                                        name = f"Damage: {name}"
+                                else:
+                                    name = f"Damage: {name}"
+                                damage_labels_str.append(name)
+
+                            img_bgr = draw_bboxes(
+                                img_bgr,
+                                np.array(boxes),
+                                damage_labels_str,
+                                scores,
+                                score_threshold=pipeline.confidence_threshold,
+                            )
+                            
+                    annotated_path = os.path.join(args.output_dir, f"annotated_{image_name}")
+                    cv2.imwrite(annotated_path, img_bgr)
+                
+            except Exception as e:
+                logger.error(f"Error processing {image_name}: {str(e)}")
+
+    print("\n" + "=" * 60)
+    print(f"Processed {len(image_paths)} images in {total_time:.0f}ms")
+    print(f"Average time per image: {total_time/len(image_paths):.0f}ms")
+    print(f"Results saved to: {args.output_dir}")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

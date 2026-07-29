@@ -5,34 +5,50 @@
 # Same architecture as damage model but trained on part annotations.
 # =============================================================================
 
-_base_: ../base.yaml
-experiment_name: parts_maskrcnn_resnet50_v1
+_base_: ../base.yaml                            # Inherits default settings from the base configuration file
+experiment_name: parts_maskrcnn_resnet50_v1     # Name of the experiment, used for logging and saving weights
 
 model:
-  name: maskrcnn_resnet50
-  stage: parts
-  num_classes: 6                  # bg + 5 part classes (vehicle-body-part, bonnet, front_bumper, front_windshield, headlamp)
-  backbone: resnet50
-  pretrained: true
-  fpn: true
-  trainable_backbone_layers: 3
-  min_size: 512
-  max_size: 800
+  name: maskrcnn_resnet50                       # Model architecture to use (Mask R-CNN with ResNet-50)
+  stage: parts                                  # The pipeline stage this model belongs to (e.g., parts segmentation)
+  num_classes: 22                               # Number of classes to predict (1 background + 21 vehicle part classes)
+  backbone: resnet50                            # The feature extractor network (ResNet-50)
+  pretrained: true                              # Whether to start with ImageNet pre-trained weights for the backbone
+  fpn: true                                     # Uses a Feature Pyramid Network (FPN) to better detect objects at multiple scales
+  trainable_backbone_layers: 5                  # Number of top backbone layers to fine-tune (0-5, where 5 means all layers)
+  min_size: 640                                 # Minimum image dimension (shorter edge) resized during preprocessing
+  max_size: 800                                 # Maximum image dimension (longer edge) resized during preprocessing
+  mask_loss_weight: 2.0                         # Weight multiplier for mask loss
+  mask_loss_type: bce_dice                      # Loss function for mask head (bce, bce_dice)
 
 data:
-  root: front_kr-1
-  annotation_format: coco
-  image_size: 512
+  root: data/rcnn_kaggle_coco                   # Root directory containing the dataset images and annotations
+  annotation_format: coco                       # Format of the bounding box and mask annotations (COCO format)
+  image_size: 800                               # Target image size for training and inference
+  class_names: [
+    "Background", "Quarter-panel", "Front-wheel", "Back-window", "Trunk", 
+    "Front-door", "Rocker-panel", "Grille", "Windshield", "Front-window", 
+    "Back-door", "Headlight", "Back-wheel", "Back-windshield", "Hood", 
+    "Fender", "Tail-light", "License-plate", "Front-bumper", "Back-bumper", 
+    "Mirror", "Roof"
+  ]
 
 training:
-  epochs: 30
-  batch_size: 2
+  epochs: 50                                  # Total number of complete passes through the training dataset
+  early_stopping:
+    enabled: true
+    patience: 5
+    metric: loss
+    mode: min                                   # Early stopping patience: stop training if no improvement after 5 epochs
+  batch_size: 4                                 # Number of images processed in parallel before updating model weights
   optimizer:
-    name: sgd
-    lr: 0.005
-    momentum: 0.9
-    weight_decay: 0.0005
+    name: sgd                                   # Stochastic Gradient Descent optimizer used to update model weights
+    lr: 0.002                                   # Learning rate (step size for updating weights)
+    momentum: 0.9                               # Momentum factor to accelerate gradients in the consistent direction
+    weight_decay: 0.0005                        # L2 penalty to prevent overfitting by penalizing large weights
   scheduler:
-    name: step
-    step_size: 10
-    gamma: 0.1
+    name: cosine                                # Learning rate scheduler type
+    T_max: 100                                  # Maximum number of iterations for Cosine Annealing
+    eta_min: 0.0001                             # Minimum learning rate                                  # Factor to multiply the learning rate by at each step (e.g., reduce by 90%)
+output:
+  runs_dir: runs/parts_maskrcnn_v3

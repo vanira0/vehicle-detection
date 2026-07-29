@@ -30,9 +30,13 @@ from evaluation.evaluator import Evaluator
 from models.registry import get_model
 
 # Import model packages to trigger registration
-import models.gatekeeper  # noqa: F401
+import models.gatekeeper
+import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
+import models.vehicle     # noqa: F401
+import models.yolo_segmentation # noqa: F401
+import models.maskrcnn_segmentation # noqa: F401
 
 from training.callbacks import (
     CallbackList,
@@ -66,27 +70,62 @@ def parse_args():
     return parser.parse_args()
 
 
+def resolve_data_loader_settings(data_cfg):
+    """Return dataloader settings that are robust for this training setup."""
+    configured_workers = getattr(data_cfg, "num_workers", None)
+    if configured_workers is None:
+        configured_workers = 0
+
+    try:
+        num_workers = int(configured_workers)
+    except (TypeError, ValueError):
+        num_workers = 0
+
+    if num_workers < 0:
+        num_workers = 0
+
+    # The project occasionally crashes in Linux/WSL-style environments when
+    # PyTorch multiprocessing workers load images and annotations. Using a
+    # single process is more reliable for training runs.
+    if num_workers > 0 and os.name == "posix":
+        num_workers = 0
+
+    pin_memory = getattr(data_cfg, "pin_memory", False)
+    return num_workers, pin_memory
+
+
 def build_data_loaders(config):
     """Build train and validation data loaders from config."""
     stage = config.model.stage
     data_cfg = config.data
     batch_size = config.training.batch_size
-    num_workers = getattr(data_cfg, "num_workers", 4)
-    pin_memory = getattr(data_cfg, "pin_memory", True)
+    num_workers, pin_memory = resolve_data_loader_settings(data_cfg)
 
-    if stage == "gatekeeper":
+    if getattr(data_cfg, "annotation_format", "") == "folder" or stage in ["gatekeeper", "angle"]:
         # Folder-based classification dataset
         train_transform = build_augmentation_pipeline(config, is_train=True)
         val_transform = build_augmentation_pipeline(config, is_train=False)
 
+        train_root = os.path.join(data_cfg.root, "train")
+        val_root = os.path.join(data_cfg.root, "val")
+        if not os.path.exists(val_root) and os.path.exists(os.path.join(data_cfg.root, "valid")):
+            val_root = os.path.join(data_cfg.root, "valid")
+
+        class_names = getattr(data_cfg, "class_names", None)
+        
         train_dataset = ClassificationDataset(
-            root=os.path.join(data_cfg.root, "train"),
+            root=train_root,
             transform=train_transform,
+            class_names=class_names,
         )
         val_dataset = ClassificationDataset(
-            root=os.path.join(data_cfg.root, "val"),
+            root=val_root,
             transform=val_transform,
+            class_names=class_names,
         )
+        
+        if len(train_dataset) == 0:
+            raise RuntimeError(f"Found 0 images in {train_root}. Check if data.root is correct (maybe the dataset downloaded to a different folder like rf_ds_angle-3?) or if the folder structure matches a classification dataset.")
 
         train_loader = DataLoader(
             train_dataset,
@@ -199,21 +238,28 @@ def main():
     # Set seed
     set_seed(getattr(config, "seed", 42))
 
+    # Get model from registry
+    model_name = config.model.name
+    logger.info(f"Loading model strategy: {model_name}")
+    model_wrapper = get_model(model_name)()
+    
+    if hasattr(model_wrapper, "train_native"):
+        logger.info("Model uses native training loop. Bypassing custom PyTorch Trainer.")
+        model_wrapper.build(config.model)
+        final_metrics = model_wrapper.train_native(config)
+        logger.info(f"Native training finished. Results: {final_metrics}")
+        return
+
     # Build data loaders
     logger.info("Building data loaders...")
     train_loader, val_loader = build_data_loaders(config)
     logger.info(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
 
-    # Get model from registry
-    model_name = config.model.name
-    logger.info(f"Loading model strategy: {model_name}")
-    model_wrapper = get_model(model_name)()
-
     # Build callbacks
     callbacks = build_callbacks(config)
 
     # Build evaluator
-    model_type = "classification" if config.model.stage == "gatekeeper" else "detection"
+    model_type = "classification" if config.model.stage in ["gatekeeper", "angle"] else "detection"
     evaluator = Evaluator(
         model_type=model_type,
         num_classes=getattr(config.model, "num_classes", 2),

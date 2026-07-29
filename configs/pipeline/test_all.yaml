@@ -1,0 +1,31 @@
+name: "test_all_models"
+device: "cpu"
+confidence_threshold: 0.2
+iou_threshold: 0.1
+
+# List of models to execute in order
+models:
+  - name: "vehicle"
+    model_name: "yolo11_vehicle_seg"
+    checkpoint: "runs/vehicle_seg_y11/best.pt"
+    confidence_threshold: 0.079
+    
+  - name: "damage"
+    model_name: "yolo11_seg"
+    checkpoint: "runs/cardd_y11m/trained.pt" # Update with actual path
+    # checkpoint: "runs/yolo11m_damage_auto/best.pt"
+    confidence_threshold: 0.3
+
+  - name: "parts"
+    model_name: "yolo26_seg"
+    checkpoint: "runs/parts_yolo26/best.pt" # Update with actual path
+    confidence_threshold: 0.3
+
+  - name: "angle"
+    model_name: "yolo11n_cls_angle_classifier"
+    checkpoint: "runs/yolo11n_angle/best.pt"  # Update with actual path
+    confidence_threshold: 0.3
+
+# Post-processing modules to run after all models
+post_processors:
+  - name: "damage_to_parts_orchestrator"

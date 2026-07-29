@@ -1,0 +1,31 @@
+# Mask R-CNN Loss Tuning and Dice Loss Implementation
+
+To address the issues of bounding box detection dominating the learning process and struggling with highly imbalanced masks, we need to adjust the loss computation for the mask head in torchvision's Mask R-CNN.
+
+## Proposed Changes
+
+### `configs/parts/maskrcnn_resnet50.yaml`
+We will add new configuration parameters to control the mask loss weight and the loss type.
+- Add `mask_loss_weight` (e.g., 2.0 or 3.0) to give more importance to the mask loss.
+- Add `mask_loss_type` (e.g., "bce_dice" or "dice") to switch from standard BCE to a combined BCE + Dice loss.
+
+### `src/models/maskrcnn_segmentation.py`
+We will modify the `MaskRCNNSegmentationWrapper` to:
+1. **Store Configuration**: Save the model configuration in `build()` so it can be accessed during loss computation.
+2. **Apply Loss Multiplier**: In `compute_loss()`, intercept the `loss_dict` returned by the model, and multiply `loss_dict["loss_mask"]` by the configured weight.
+3. **Inject Dice Loss**: Because torchvision's `MaskRCNN` computes losses internally within `RoIHeads`, the cleanest way to replace the mask loss function without copying hundreds of lines of code is to monkey-patch `torchvision.models.detection.roi_heads.maskrcnn_loss`. We will define a custom `maskrcnn_loss_with_dice` function that calculates both the standard Cross Entropy/BCE loss and a Dice loss for improved boundary fidelity, and apply it when the model is built.
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Loss Combination**: A common approach is to combine BCE and Dice Loss (e.g., `loss = 0.5 * BCE + 0.5 * Dice`) rather than relying purely on Dice Loss, as BCE helps with stability. Are you okay with implementing a combined BCE + Dice loss?
+
+## Verification Plan
+
+### Automated Verification
+- We can run a short training script or verify the model builds without syntax errors.
+
+### Manual Verification
+- Run `train.py` on your EC2 instance and observe the `loss_mask` in the logs. It should reflect the increased scale (due to the weight multiplier) and the new Dice loss components.
+
+Please review the plan and approve to proceed!

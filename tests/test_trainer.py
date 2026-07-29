@@ -11,7 +11,10 @@ import torch.nn as nn
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import scripts.train as train_module
+from scripts.train import resolve_data_loader_settings
 from training.optimizers import OptimizerFactory
 from training.schedulers import SchedulerFactory
 from training.callbacks import (
@@ -31,6 +34,21 @@ class SimpleModel(nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class TestDataLoaderSettings:
+    """Tests for robust dataloader settings on Linux-like environments."""
+
+    def test_disables_multiprocessing_workers_on_posix(self, monkeypatch):
+        class DummyDataConfig:
+            num_workers = 4
+            pin_memory = True
+
+        monkeypatch.setattr(train_module.os, "name", "posix")
+        num_workers, pin_memory = resolve_data_loader_settings(DummyDataConfig())
+
+        assert num_workers == 0
+        assert pin_memory is True
 
 
 class TestOptimizerFactory:

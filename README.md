@@ -9,6 +9,12 @@ Input Image
      │
      ▼
 ┌─────────────────────────────┐
+│ Stage 0: Vehicle Isolation  │  YOLO11n-seg (single class: vehicle)
+│ "Isolate the target vehicle"│  Outputs bbox + pixel mask
+└─────────────┬───────────────┘
+              │ (Masked vehicle image)
+              ▼
+┌─────────────────────────────┐
 │ Stage 1: Gatekeeper         │  Binary CNN (ResNet50 / MobileNetV3)
 │ "Is this a damaged car?"    │  Filters out irrelevant images early
 └─────────────┬───────────────┘
@@ -109,6 +115,7 @@ vehicle-detection/
 
 | Name | Stage | Type | Architecture |
 |------|-------|------|-------------|
+| `yolo11_vehicle_seg` | Vehicle | Instance Seg. | YOLO11n-seg |
 | `resnet50_classifier` | Gatekeeper | Classification | ResNet50 + FC head |
 | `mobilenetv3_classifier` | Gatekeeper | Classification | MobileNetV3 + FC head |
 | `maskrcnn_resnet50` | Damage | Instance Seg. | Mask R-CNN (ResNet50-FPN) |

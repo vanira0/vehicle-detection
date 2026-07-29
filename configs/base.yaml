@@ -20,8 +20,8 @@ data:
   train_split: 0.8
   val_split: 0.1
   test_split: 0.1
-  num_workers: 4
-  pin_memory: true
+  num_workers: 0
+  pin_memory: false
 
 # ---------------------------------------------------------------------------
 # Augmentation (Albumentations)

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
 Run the full 3-stage inference pipeline on an image.
 
@@ -27,7 +27,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import models.gatekeeper  # noqa: F401
+import models.gatekeeper
+import models.angle
 import models.damage      # noqa: F401
 import models.parts       # noqa: F401
 

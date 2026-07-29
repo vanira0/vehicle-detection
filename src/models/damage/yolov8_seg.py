@@ -10,6 +10,8 @@ Requires: pip install ultralytics
 
 from typing import Any, Dict, List
 
+
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,6 +21,39 @@ from models.registry import register_model
 from utils.config import Config
 
 
+def _apply_clahe_to_batch(trainer) -> None:
+    """Apply CLAHE to each image in the Ultralytics training batch.
+
+
+    Ultralytics training batches contain BGR float tensors in [0, 1].
+    CLAHE is applied to the L-channel in LAB space, matching the
+    preprocessing used at inference time and in the standard dataset.
+    """
+    imgs = trainer.batch["img"]          # [B, C, H, W], float, BGR, [0, 1]
+    device = imgs.device
+    orig_dtype = imgs.dtype
+
+
+    # To uint8 numpy [B, H, W, C]
+    imgs_np = (
+        imgs.permute(0, 2, 3, 1).cpu().float().numpy() * 255
+    ).clip(0, 255).astype(np.uint8)
+
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    for i in range(len(imgs_np)):
+        lab = cv2.cvtColor(imgs_np[i], cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l = clahe.apply(l)
+        imgs_np[i] = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+
+
+    # Back to original dtype/device tensor [B, C, H, W]
+    trainer.batch["img"] = (
+        torch.from_numpy(imgs_np).float() / 255.0
+    ).permute(0, 3, 1, 2).to(device=device, dtype=orig_dtype)
+
+# @register_model("yolo11_seg")
 @register_model("yolov8_seg")
 class YOLOv8SegDamage(BaseDetector):
     """
@@ -114,9 +149,15 @@ class YOLOv8SegDamage(BaseDetector):
                 labels = labels[keep]
 
                 # Extract masks if available
-                masks = np.array([])
+                masks = []
                 if hasattr(pred, "masks") and pred.masks is not None:
-                    masks = pred.masks.data[keep].cpu().numpy()
+                    orig_h, orig_w = pred.orig_shape
+                    raw_masks = pred.masks.data[keep].cpu().numpy()
+                    import cv2
+                    for m in raw_masks:
+                        m_resized = cv2.resize(m, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+                        masks.append(m_resized > 0.5)
+                masks = np.array(masks) if len(masks) > 0 else np.array([])
 
                 results.append({
                     "boxes": boxes,
@@ -154,14 +195,28 @@ class YOLOv8SegDamage(BaseDetector):
         if self._yolo_model is None:
             self.build(model_config)
 
-        results = self._yolo_model.train(
-            data=data_yaml,
-            epochs=getattr(training_config, "epochs", 100),
-            imgsz=getattr(model_config, "image_size", 640),
-            batch=getattr(training_config, "batch_size", 8),
-            lr0=getattr(training_config.optimizer, "lr", 0.001),
-            weight_decay=getattr(training_config.optimizer, "weight_decay", 0.0005),
-            amp=getattr(training_config, "amp", True),
-            device="0" if torch.cuda.is_available() else "cpu",
+        train_args = {
+            "data": data_yaml,
+            "epochs": getattr(training_config, "epochs", 100),
+            "imgsz": getattr(model_config, "image_size", 640),
+            "batch": getattr(training_config, "batch_size", 8),
+            "lr0": getattr(training_config.optimizer, "lr", 0.001),
+            "weight_decay": getattr(training_config.optimizer, "weight_decay", 0.0005),
+            "amp": getattr(training_config, "amp", True),
+            "device": "0" if torch.cuda.is_available() else "cpu",
+        }
+
+        # Extract any extra YOLO specific kwargs
+        yolo_kwargs = {}
+        if hasattr(training_config, "yolo_kwargs"):
+            yolo_kwargs = training_config.yolo_kwargs.to_dict()
+            
+        # Merge any custom kwargs provided by the user
+        train_args.update(yolo_kwargs)
+
+        self._yolo_model.add_callback(
+            "on_train_batch_start", _apply_clahe_to_batch
         )
+
+        results = self._yolo_model.train(**train_args)
         return results

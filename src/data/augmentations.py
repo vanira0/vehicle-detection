@@ -81,6 +81,22 @@ def build_classification_augmentation(
                 )
             )
 
+    # # Add this before normalization (e.g. right before transforms.append(A.Normalize(...)))
+    # clahe = getattr(aug_cfg, "clahe", None)
+    # if clahe:
+    #     # Convert tile_grid_size to tuple if provided as list/tuple in yaml
+    #     grid_size = getattr(clahe, "tile_grid_size", (8, 8))
+    #     if isinstance(grid_size, list):
+    #         grid_size = tuple(grid_size)
+            
+    #     transforms.append(
+    #         A.CLAHE(
+    #             clip_limit=getattr(clahe, "clip_limit", 4.0),
+    #             tile_grid_size=grid_size,
+    #             p=getattr(clahe, "prob", 1.0) if is_train else 1.0, # Always apply for validation
+    #         )
+    #     )
+
     # Normalize (always applied)
     norm = getattr(aug_cfg, "normalize", None)
     if norm:
@@ -223,7 +239,7 @@ def build_augmentation_pipeline(
     stage = config.model.stage
     image_size = getattr(config.data, "image_size", 1024)
 
-    if stage == "gatekeeper":
+    if getattr(config.data, "annotation_format", "") == "folder" or stage in ["gatekeeper", "angle"]:
         return build_classification_augmentation(config, is_train, image_size)
     else:
         return build_segmentation_augmentation(config, is_train, image_size)

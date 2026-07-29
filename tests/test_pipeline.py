@@ -2,6 +2,7 @@
 Tests for the inference pipeline components.
 """
 
+import importlib.util
 import os
 import sys
 
@@ -16,6 +17,14 @@ from evaluation.metrics import (
     compute_mask_iou,
     _compute_box_iou,
 )
+
+
+spec = importlib.util.spec_from_file_location(
+    "infer_pipeline",
+    os.path.join(os.path.dirname(__file__), "..", "scripts", "infer_pipeline.py"),
+)
+infer_pipeline = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(infer_pipeline)
 
 
 class TestOrchestrator:
@@ -55,8 +64,42 @@ class TestOrchestrator:
 
         assert len(findings) == 1
         assert findings[0]["damage_type"] == "scratch"
-        assert findings[0]["car_part"] == "hood"
+        assert findings[0]["body_part"] == ["hood"]
         assert findings[0]["overlap_score"] > 0.3
+
+    def test_multiple_parts_single_damage(self):
+        """Test that a single damage overlapping multiple parts produces one finding with a list of parts."""
+        h, w = 100, 100
+
+        # Create damage mask covering top half
+        damage_mask = np.zeros((h, w), dtype=np.uint8)
+        damage_mask[:50, :] = 1
+
+        # Create part mask 1 covering top-left
+        part_mask1 = np.zeros((h, w), dtype=np.uint8)
+        part_mask1[:50, :50] = 1
+
+        # Create part mask 2 covering top-right
+        part_mask2 = np.zeros((h, w), dtype=np.uint8)
+        part_mask2[:50, 50:] = 1
+
+        damage_preds = {
+            "masks": np.array([damage_mask]),
+            "labels": np.array([1]),  # scratch
+            "scores": np.array([0.9]),
+        }
+        part_preds = {
+            "masks": np.array([part_mask1, part_mask2]),
+            "labels": np.array([1, 2]),  # indexes 1 and 2 in part_classes
+            "scores": np.array([0.85, 0.80]),
+        }
+
+        findings = self.orchestrator.map_damage_to_parts(damage_preds, part_preds)
+
+        assert len(findings) == 1
+        assert findings[0]["damage_type"] == "scratch"
+        assert isinstance(findings[0]["body_part"], list)
+        assert len(findings[0]["body_part"]) == 2
 
     def test_no_overlap(self):
         """Non-overlapping masks should produce no findings."""
@@ -96,6 +139,26 @@ class TestOrchestrator:
         assert self.orchestrator._classify_severity(0.10) == "moderate"
         assert self.orchestrator._classify_severity(0.25) == "severe"
         assert self.orchestrator._classify_severity(0.50) == "critical"
+
+
+def test_no_parts_when_damage_is_below_confidence_threshold():
+    """Parts should not be selected when the damage detection is below threshold."""
+    damage_ctx = {
+        "boxes": np.array([[0, 0, 10, 10]], dtype=float),
+        "labels": np.array([0]),
+        "scores": np.array([0.2]),
+    }
+    parts_ctx = {
+        "boxes": np.array([[0, 0, 20, 20]], dtype=float),
+        "labels": np.array([1]),
+        "scores": np.array([0.9]),
+    }
+
+    indices = infer_pipeline._get_damaged_part_indices(
+        [], damage_ctx, parts_ctx, overlap_ratio_threshold=0.7, confidence_threshold=0.5
+    )
+
+    assert indices == set()
 
     def test_findings_sorted_by_severity(self):
         """Findings should be sorted most severe first."""
