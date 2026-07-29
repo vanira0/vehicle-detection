@@ -217,7 +217,7 @@ def visualize_pipeline_output(
     )
     axes[2].imshow(cv2.cvtColor(combined, cv2.COLOR_BGR2RGB))
     report_text = "\n".join(
-        f"{r.get('damage_type', '?')} on {r.get('car_part', '?')} "
+        f"{r.get('damage_type', '?')} on {', '.join(str(p) for p in r.get('body_part', [])) if isinstance(r.get('body_part'), list) else r.get('body_part', '?')} "
         f"(IoU: {r.get('overlap_score', 0):.2f})"
         for r in orchestrator_report
     )
