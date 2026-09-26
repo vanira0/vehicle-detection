@@ -1,0 +1,124 @@
+# =============================================================================
+# Instrument Cluster Gatekeeper -- Binary Image Classifier
+# =============================================================================
+# Stage 0 of the instrument cluster pipeline.
+# Filters whether an uploaded image contains a valid vehicle instrument cluster
+# before passing it downstream to the 19-class warning-light detector.
+#
+# Valid   (class 0): Instrument cluster dashboard photo
+# Invalid (class 1): Car exterior, steering wheel, seats, blurry artifact, etc.
+#
+# Dataset folder layout (ImageFolder convention):
+#   data/instrument_cluster/gatekeeper/
+#       train/
+#           valid_cluster/    <-- class 0
+#           invalid/          <-- class 1
+#       val/
+#           valid_cluster/
+#           invalid/
+#
+# Usage:
+#   python scripts/train_cluster_gatekeeper.py \
+#       --config configs/gatekeeper/instrument_cluster_gatekeeper.yaml
+# =============================================================================
+
+_base_: ../base.yaml
+
+experiment_name: cluster_gatekeeper_resnet50_v1
+
+# ---------------------------------------------------------------------------
+# Project
+# ---------------------------------------------------------------------------
+project:
+  name: instrument-cluster-gatekeeper
+  seed: 42
+  device: null                    # null = auto (cuda > cpu)
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  name: cluster_gatekeeper        # registered in src/models/gatekeeper/cluster_gatekeeper.py
+  stage: gatekeeper
+  architecture: resnet50          # resnet50 | mobilenet_v3_large | efficientnet_b0
+  pretrained: true
+  weights: IMAGENET1K_V2          # torchvision weights enum string
+  num_classes: 2
+  dropout_rate: 0.4               # tunable; higher = more regularization
+  freeze_backbone: true           # freeze backbone initially, unfreeze after warmup
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  annotation_format: folder       # ImageFolder layout (class-name subdirs)
+  dataset_dir: data/instrument_cluster/gatekeeper
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  class_names:
+    - valid_cluster               # 0 -- genuine instrument cluster
+    - invalid                     # 1 -- any non-cluster image
+
+# ---------------------------------------------------------------------------
+# Augmentation
+# ---------------------------------------------------------------------------
+augmentation:
+  # Geometric
+  horizontal_flip: 0.5            # p=0.5 -- clusters may appear mirrored in reflections
+  vertical_flip: 0.0              # always off -- clusters are always upright
+  rotation_limit: 15              # degrees -- slight camera tilt
+  # Photometric -- simulate real-world lighting conditions
+  color_jitter:
+    brightness: 0.3               # sunlight / nighttime variation
+    contrast: 0.3
+    saturation: 0.2
+    hue: 0.05                     # very low -- avoid hue shift confusing warning light colours
+  # Camera artifacts -- simulate phone camera noise and motion blur
+  gaussian_blur:
+    prob: 0.2
+    kernel_size: [3, 7]           # odd values only; randomly sampled
+  random_noise:
+    prob: 0.1
+    std_range: [0.01, 0.05]       # additive Gaussian noise std range
+  # Regularization
+  random_erasing:
+    prob: 0.1
+    scale: [0.02, 0.1]            # fraction of image area to erase
+
+# ---------------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------------
+training:
+  epochs: 60
+  batch_size: 32                  # can override data.batch_size here
+  early_stopping_patience: 15     # stop if val_f1 does not improve
+  freeze_backbone_epochs: 5       # unfreeze backbone after N head-only warmup epochs
+  use_amp: true                   # torch.cuda.amp.autocast + GradScaler
+
+# ---------------------------------------------------------------------------
+# Optimizer
+# ---------------------------------------------------------------------------
+optimizer:
+  name: AdamW
+  lr: 0.0005
+  weight_decay: 0.0001
+  scheduler:
+    name: CosineAnnealingLR
+    T_max: 60                     # should match training.epochs
+    eta_min: 0.000005
+
+# ---------------------------------------------------------------------------
+# Logging & Output
+# ---------------------------------------------------------------------------
+logging:
+  level: INFO
+  log_dir: runs/cluster_gatekeeper_resnet50_v1/logs
+  weights_dir: runs/cluster_gatekeeper_resnet50_v1/weights
+  plots_dir: runs/cluster_gatekeeper_resnet50_v1/plots
+  best_model_filename: best_model.pth
+  last_model_filename: last_model.pth
+
+output:
+  runs_dir: runs/cluster_gatekeeper_resnet50_v1
