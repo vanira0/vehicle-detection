@@ -32,11 +32,12 @@ from models.registry import get_model
 # Import model packages to trigger registration
 import models.gatekeeper
 import models.angle
-import models.damage      # noqa: F401
-import models.parts       # noqa: F401
-import models.vehicle     # noqa: F401
-import models.yolo_segmentation # noqa: F401
-import models.maskrcnn_segmentation # noqa: F401
+import models.damage                      # noqa: F401
+import models.parts                       # noqa: F401
+import models.vehicle                     # noqa: F401
+import models.yolo_segmentation           # noqa: F401
+import models.maskrcnn_segmentation       # noqa: F401
+import models.instrument_cluster_detection  # noqa: F401  registers yolo11_detect / yolov8_detect
 
 from training.callbacks import (
     CallbackList,

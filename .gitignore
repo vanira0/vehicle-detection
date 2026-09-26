@@ -40,3 +40,4 @@ output_img_*
 input_img_*
 rf_ds_* 
 .kaggle
+results/

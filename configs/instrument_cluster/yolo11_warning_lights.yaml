@@ -1,0 +1,145 @@
+# =============================================================================
+# Instrument Cluster Warning Light Detection — YOLOv11 Configuration
+# =============================================================================
+# Inherits base defaults and overrides them for the warning light detection task.
+# Task: Object DETECTION (not segmentation) — bounding box + class label.
+#
+# Key design decisions:
+#   - hsv_h is deliberately minimal to preserve color semantics.
+#     Yellow/Amber vs. Red vs. Blue are the primary class discriminators;
+#     any significant hue shift corrupts the training signal.
+#   - fliplr=0.0 because many icons (Battery, Engine, TPMS) are asymmetric.
+#   - flipud=0.0 always — warning lights have a fixed orientation.
+#   - mosaic and mixup are enabled to improve generalization but can be
+#     warmed-down at the end of training via YOLO's built-in scheduler.
+#
+# Usage:
+#   python scripts/train_warning_lights.py \
+#       --config configs/instrument_cluster/yolo11_warning_lights.yaml
+# =============================================================================
+
+_base_: ../base.yaml
+
+experiment_name: yolo11s_warning_lights_v2
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  name: yolo11_detect          # Registered name in src/models/instrument_cluster_detection.py
+  stage: instrument_cluster    # Logical pipeline stage label
+  weights: yolo11s.pt          # Pretrained COCO weights; swap to yolov8s.pt if preferred
+  task: detect                 # Ultralytics task mode
+  device: null                 # null = auto-detect (CUDA -> MPS -> CPU)
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  # Path to the YOLO-format data.yaml for the warning light dataset.
+  # Expected layout:
+  #   data/instrument_cluster/
+  #     data.yaml
+  #     images/train/  images/val/  images/test/
+  #     labels/train/  labels/val/  labels/test/
+  yaml_path: data/instrument_cluster/data.yaml
+  image_size: 640              # Input resolution; 800 also works for smaller icons
+  # 19-class industrial taxonomy  (index = YOLO label id)
+  # ---- CRITICAL (Red) ---------------------------------------------------
+  class_names:
+    - Battery_Charging_System       # 0  - dead/failing battery or alternator fault
+    - Engine_Oil_Pressure           # 1  - critically low oil pressure
+    - Engine_Coolant_Temperature    # 2  - engine overheating
+    - Brake_System_Alert            # 3  - parking brake on OR low brake fluid
+    - Airbag_SRS                    # 4  - airbag / supplemental restraint fault
+    - Seat_Belt_Reminder            # 5  - unlatched seat belt detected
+    - Power_Steering_Warning        # 6  - electric/hydraulic power-steering fault
+  # ---- CAUTION (Yellow/Amber) -------------------------------------------
+    - Check_Engine_MIL              # 7  - malfunction indicator lamp (OBD-II)
+    - ABS                           # 8  - anti-lock braking system warning
+    - TPMS                          # 9  - tyre pressure monitoring system
+    - Traction_Control              # 10 - TC active (flash) or disabled (solid)
+    - Low_Fuel_Level                # 11 - fuel level critically low
+    - Lane_Departure_Warning        # 12 - LDW / LKAS alert
+    - Glow_Plug_Indicator           # 13 - diesel pre-heat in progress or fault
+  # ---- INFORMATIONAL (Green / Blue / White) ------------------------------
+    - High_Beam_Indicator           # 14 - high-beam headlights active (blue)
+    - Turn_Signal                   # 15 - left or right indicator / hazards (green)
+    - Fog_Lights                    # 16 - front or rear fog lights active (green/amber)
+    - Cruise_Control_Active         # 17 - adaptive or standard cruise engaged (green/white)
+    - Auto_Hold_EPB                 # 18 - auto-hold or electronic parking brake active (green)
+
+# ---------------------------------------------------------------------------
+# Training schedule
+# ---------------------------------------------------------------------------
+training:
+  epochs: 100
+  batch_size: 16
+  patience: 20                 # Early stopping: halt if mAP50 does not improve
+  val_period: 1                # Run validation every N epochs
+
+  # -------------------------------------------------------------------------
+  # YOLO-native kwargs -- passed directly into model.train(**kwargs)
+  # -------------------------------------------------------------------------
+  yolo_kwargs:
+
+    # --- Optimizer & Learning Rate -------------------------------------------
+    optimizer: AdamW           # AdamW generalises better than SGD on small datasets
+    lr0: 0.001                 # Initial LR; lower than SGD default for AdamW stability
+    lrf: 0.01                  # Final LR = lr0 * lrf (cosine decay target)
+    momentum: 0.937            # SGD momentum / AdamW beta1
+    weight_decay: 0.0005       # L2 regularization
+    warmup_epochs: 3.0         # Linear warm-up to avoid early divergence
+    warmup_momentum: 0.8       # Momentum at end of warm-up
+    cos_lr: true               # Enable cosine LR decay schedule
+
+    # --- Loss Weights --------------------------------------------------------
+    box: 7.5                   # Bounding-box regression loss weight
+    cls: 0.5                   # Classification loss weight
+    dfl: 1.5                   # Distribution focal loss weight
+
+    # --- Augmentations (color & shape semantics preserved) -------------------
+    #
+    # HSV augmentation -- THE most critical knobs for this task.
+    #   hsv_h (hue): VERY LOW -- yellow vs. red vs. blue are class discriminators.
+    #                Larger values will systematically mislabel classes.
+    #   hsv_s (saturation): moderate -- simulates washed-out sun glare or
+    #                        dim nighttime clusters.
+    #   hsv_v (value/brightness): moderate -- handles bright sun reflections
+    #                              and near-darkness driving conditions.
+    hsv_h: 0.010               # +/-1.0 % hue shift -- intentionally tiny
+    hsv_s: 0.60                # +/-60 % saturation shift
+    hsv_v: 0.40                # +/-40 % brightness shift
+
+    # Geometric flips -- deliberately conservative.
+    fliplr: 0.0                # NO horizontal flip -- asymmetric icons (Battery, Engine)
+    flipud: 0.0                # NO vertical flip -- icons always upright
+
+    # Mosaic + mixup -- improve robustness to layout variability.
+    mosaic: 1.0                # Combine 4 tiles; reduce to 0.0 at epoch close_mosaic
+    mixup: 0.10                # Soft blend of two images; kept low
+    close_mosaic: 10           # Disable mosaic for last N epochs (YOLO built-in)
+
+    # Other geometric augmentations.
+    degrees: 5.0               # Small rotation -- clusters are mostly upright
+    scale: 0.5                 # Scale jitter +/-50% -- icon size varies across clusters
+    translate: 0.1             # +/-10% translation
+    perspective: 0.0003        # Very slight perspective warp
+    shear: 0.0                 # No shear -- preserves icon shape fidelity
+
+    # Copy-paste and erasing (off by default; enable if dataset is very small)
+    copy_paste: 0.0
+    erasing: 0.0
+
+    # --- Validation & Saving -------------------------------------------------
+    save_json: false           # Set true to get COCO-format val results
+    save_txt: false            # Set true to write label predictions to .txt
+    save_conf: false           # Include confidence in saved .txt
+    plots: true                # Generate confusion matrix, PR curve, etc.
+    verbose: true
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  runs_dir: runs/instrument_cluster_yolo11s_v2
